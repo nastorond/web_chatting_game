@@ -7,12 +7,12 @@ import {
   ServerToClientMessage,
   ClientToServerMessage,
   Question,
-  Player,
+  EndCondition,
 } from "@/lib/game/types";
 
 /**
  * 게임 방 페이지 (app/room/[roomId]/page.tsx)
- * WebSocket 대신 HTTP 폴링 방식으로 동작하도록 수정되었습니다.
+ * UI 흐름 및 사용자 경험(UX) 개선 버전
  */
 export default function GameRoomPage() {
   const router = useRouter();
@@ -26,7 +26,11 @@ export default function GameRoomPage() {
   const [loading, setLoading] = useState(true);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
-  // 입력 상태
+  // 게임 설정 입력 (심판용)
+  const [topicInput, setTopicInput] = useState("");
+  const [endConditionInput, setEndConditionInput] = useState<EndCondition>("firstWin");
+
+  // 게임 플레이 입력
   const [askToPlayerId, setAskToPlayerId] = useState("");
   const [askText, setAskText] = useState("");
   const [guessText, setGuessText] = useState("");
@@ -35,7 +39,7 @@ export default function GameRoomPage() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ─── 초기 진입 및 폴링 로컬 로직 ────────────────────────
+  // ─── 초기 진입 및 폴링 ──────────────────────────
   useEffect(() => {
     const nickname = localStorage.getItem("nickname");
     if (!nickname) {
@@ -43,7 +47,6 @@ export default function GameRoomPage() {
       return;
     }
 
-    // playerId 관리
     const playerIdKey = `playerId:${roomIdStr}`;
     let playerId = localStorage.getItem(playerIdKey);
     if (!playerId) {
@@ -52,7 +55,6 @@ export default function GameRoomPage() {
     }
     setMyPlayerId(playerId);
 
-    // 초기 입장(Join) 처리
     const initGame = async () => {
       try {
         const res = await fetch(`/api/room/${roomIdStr}/join`, {
@@ -66,9 +68,7 @@ export default function GameRoomPage() {
         setRoom(data.room);
         setQuestions(data.questions);
         setLoading(false);
-
-        // 폴링 시작 (1초 간격)
-        startPolling(playerId);
+        startPolling();
       } catch (err: any) {
         setErrorBanner(`접속 오류: ${err.message}`);
         setLoading(false);
@@ -83,9 +83,9 @@ export default function GameRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomIdStr, router]);
 
-  const startPolling = (playerId: string) => {
+  const startPolling = () => {
     if (pollingTimer.current) clearInterval(pollingTimer.current);
-    pollingTimer.current = setInterval(() => fetchState(), 1000);
+    pollingTimer.current = setInterval(fetchState, 1000);
   };
 
   const fetchState = async () => {
@@ -97,18 +97,17 @@ export default function GameRoomPage() {
       if (data.questions) setQuestions(data.questions);
     } catch (err) {
       console.error("Polling error:", err);
-      // 폴링 에러 시 배너를 띄울 수도 있지만 너무 잦으면 방해되므로 콘솔에만 기록
     }
   };
 
-  // Q&A 로그 자동 스크롤
+  // 자동 스크롤
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [questions]);
 
-  // ─── 액션 메시지 처리 ─────────────────────────
+  // ─── 메시지 처리 ─────────────────────────────
   const handleServerMessages = (messages: ServerToClientMessage[]) => {
     messages.forEach((msg) => {
       switch (msg.type) {
@@ -126,7 +125,9 @@ export default function GameRoomPage() {
           setTimeout(() => setErrorBanner(null), 3000);
           break;
         case "game_over":
+          setRoom(prev => prev ? { ...prev, status: "finished" } : null);
           setErrorBanner(`🏆 게임 종료! 승자: ${msg.winnerId || "없음"}`);
+          // 종료 시에는 에러 배너를 오래 유지하거나 수동으로 닫게 함
           break;
         case "error":
           setErrorBanner(`❌ 에러: ${msg.message}`);
@@ -147,7 +148,6 @@ export default function GameRoomPage() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // 즉시 상태 반영
       if (data.room) setRoom(data.room);
       if (data.questions) setQuestions(data.questions);
       if (data.messages) handleServerMessages(data.messages);
@@ -155,6 +155,19 @@ export default function GameRoomPage() {
       setErrorBanner(`작업 실패: ${err.message}`);
       setTimeout(() => setErrorBanner(null), 3000);
     }
+  };
+
+  // 심판 전용: 게임 시작
+  const handleStartGame = () => {
+    if (!topicInput) {
+      setErrorBanner("주제를 입력해주세요.");
+      return;
+    }
+    performAction({
+      type: "set_topic_and_rule",
+      topic: topicInput,
+      endCondition: endConditionInput,
+    });
   };
 
   const handleAsk = () => {
@@ -178,34 +191,46 @@ export default function GameRoomPage() {
     });
   };
 
-  // ─── 렌더링 헬퍼 ──────────────────────────
+  // ─── 렌더링 변수 ──────────────────────────
   if (loading) return <div style={styles.fullscreenCenter}>접속 중...</div>;
 
+  const me = room?.players.find((p) => p.id === myPlayerId);
+  const iAmJudge = me?.isJudge;
   const currentTurnPlayer = room?.players[room.turnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
-  const iAmJudge = room?.players.find((p) => p.id === myPlayerId)?.isJudge;
 
+  const getStatusText = (status: string | undefined) => {
+    switch (status) {
+      case "waiting": return "대기 중";
+      case "playing": return "진행 중";
+      case "finished": return "종료";
+      default: return "-";
+    }
+  };
+
+  // ─── 메인 렌더링 ──────────────────────────
   return (
     <div style={styles.wrapper}>
-      {/* 헤더 */}
+      {/* [1] 헤더 개선 */}
       <header style={styles.header}>
         <div style={styles.headerTitle}>
           Room ID: <span style={{ color: "#818cf8" }}>{roomIdStr}</span>
         </div>
         <div style={styles.headerStats}>
-          {room?.topic && (
-            <span style={styles.badge}>주제: {room.topic}</span>
-          )}
-          <span style={styles.badge}>Round {room?.round}</span>
-          <span style={{ ...styles.badge, backgroundColor: "#4f46e5" }}>
-            현재 턴: {currentTurnPlayer?.name || "대기 중"}
+          <span style={styles.badge}>상태: {getStatusText(room?.status)}</span>
+          <span style={{ ...styles.badge, backgroundColor: iAmJudge ? "#ef4444" : "#10b981" }}>
+            역할: {iAmJudge ? "심판" : "플레이어"}
           </span>
+          {room?.status === "playing" && (
+            <span style={{ ...styles.badge, backgroundColor: "#4f46e5" }}>
+              현재 턴: {currentTurnPlayer?.name || "대기 중"}
+            </span>
+          )}
         </div>
       </header>
 
-      {/* 메인 바디 */}
       <div style={styles.body}>
-        {/* 사이드바: 플레이어 */}
+        {/* 사이드바: 플레이어 목록 */}
         <aside style={styles.sidebar}>
           <h3 style={styles.sidebarHeader}>플레이어 ({room?.players.length})</h3>
           <div style={styles.playerList}>
@@ -214,7 +239,7 @@ export default function GameRoomPage() {
                 key={p.id}
                 style={{
                   ...styles.playerCard,
-                  borderColor: p.id === currentTurnPlayer?.id ? "#818cf8" : "#334155",
+                  borderColor: room?.status === "playing" && p.id === currentTurnPlayer?.id ? "#818cf8" : "#334155",
                   opacity: p.isAlive ? 1 : 0.5,
                 }}
               >
@@ -231,15 +256,52 @@ export default function GameRoomPage() {
           </div>
         </aside>
 
-        {/* 콘텐츠 섹션 */}
+        {/* 콘텐츠 영역 */}
         <section style={styles.content}>
           {errorBanner && <div style={styles.errorBanner}>{errorBanner}</div>}
 
-          {/* Q&A 로그 */}
-          <div style={styles.logContainer} ref={scrollRef}>
-            {questions.length === 0 && (
-              <div style={styles.emptyLog}>질문을 시작해보세요!</div>
+          {/* [2] 심판 전용 게임 세팅 (Waiting 상태일 때) */}
+          {iAmJudge && room?.status === "waiting" && (
+            <div style={styles.setupBox}>
+              <h2 style={{ marginBottom: "16px", fontSize: "1.2rem" }}>🎮 게임 시작 설정</h2>
+              <div style={styles.controlRow}>
+                <input
+                  style={{ ...styles.input, flex: 1 }}
+                  placeholder="게임 주제 입력 (예: 동물, 영화 제목...)"
+                  value={topicInput}
+                  onChange={(e) => setTopicInput(e.target.value)}
+                />
+                <select
+                  style={styles.select}
+                  value={endConditionInput}
+                  onChange={(e) => setEndConditionInput(e.target.value as EndCondition)}
+                >
+                  <option value="firstWin">한 명만 맞추면 종료 (선착순)</option>
+                  <option value="lastLose">마지막 한 명 남을 때까지 진행</option>
+                </select>
+                <button style={styles.button} onClick={handleStartGame}>
+                  게임 시작
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* [3] 안내 문구 */}
+          <div style={styles.instructionBanner}>
+            {room?.status === "waiting" && (
+              iAmJudge ? "플레이어들이 모두 모이면 주제를 정하고 게임을 시작하세요." : "심판이 게임을 시작하기를 기다리고 있습니다..."
             )}
+            {room?.status === "playing" && (
+              isMyTurn
+                ? "💡 당신의 턴입니다! 다른 플레이어에게 질문하거나 자신의 단어를 맞춰보세요."
+                : `${currentTurnPlayer?.name} 플레이어의 턴을 기다리는 중입니다.`
+            )}
+            {room?.status === "finished" && (
+              "🏁 게임이 종료되었습니다. 수고하셨습니다!"
+            )}
+          </div>
+
+          <div style={styles.logContainer} ref={scrollRef}>
             {questions.map((q) => (
               <div key={q.id} style={styles.logItem}>
                 <div style={styles.logHeader}>
@@ -257,10 +319,14 @@ export default function GameRoomPage() {
                 )}
               </div>
             ))}
+            {questions.length === 0 && (
+              <div style={styles.emptyLog}>아직 질문이 없습니다.</div>
+            )}
           </div>
 
-          {/* 사용자 컨트롤 */}
+          {/* [4] 컨트롤 노출 조건 */}
           <div style={styles.controls}>
+            {/* 일반 플레이어용 진행 중 컨트롤 */}
             {room?.status === "playing" && !iAmJudge && (
               <>
                 <div style={styles.controlRow}>
@@ -268,6 +334,7 @@ export default function GameRoomPage() {
                     style={styles.select}
                     value={askToPlayerId}
                     onChange={(e) => setAskToPlayerId(e.target.value)}
+                    disabled={!isMyTurn}
                   >
                     <option value="">질문할 상대 선택</option>
                     {room.players
@@ -280,7 +347,7 @@ export default function GameRoomPage() {
                   </select>
                   <input
                     style={{ ...styles.input, flex: 1 }}
-                    placeholder="상대에게 질문하기..."
+                    placeholder={isMyTurn ? "상대에게 질문하기..." : "내 턴이 아닙니다"}
                     value={askText}
                     onChange={(e) => setAskText(e.target.value)}
                     disabled={!isMyTurn}
@@ -296,7 +363,7 @@ export default function GameRoomPage() {
                 <div style={styles.controlRow}>
                   <input
                     style={{ ...styles.input, flex: 1 }}
-                    placeholder="내 단어 정답 추측..."
+                    placeholder={isMyTurn ? "내 단어 정답 추측..." : "내 턴이 아닙니다"}
                     value={guessText}
                     onChange={(e) => setGuessText(e.target.value)}
                     disabled={!isMyTurn}
@@ -312,10 +379,10 @@ export default function GameRoomPage() {
               </>
             )}
 
-            {/* 심판 컨트롤 */}
+            {/* 심판용 진행 중 도구 */}
             {iAmJudge && room?.status === "playing" && (
               <div style={styles.judgeControls}>
-                <div style={{ fontWeight: 600, marginBottom: "8px" }}>⚖️ 심판 도구</div>
+                <div style={{ fontWeight: 600, marginBottom: "8px" }}>⚖️ 심판 도구 (진행 중)</div>
                 <div style={styles.controlRow}>
                   <select
                     style={styles.select}
@@ -347,12 +414,11 @@ export default function GameRoomPage() {
               </div>
             )}
 
-            {!isMyTurn && room?.status === "playing" && !iAmJudge && (
-              <div style={styles.turnIndicator}>다른 플레이어의 턴을 기다리는 중...</div>
-            )}
-
-            {room?.status === "waiting" && (
-              <div style={styles.turnIndicator}>다른 플레이어들이 참여하기를 기다리는 중...</div>
+            {/* 대기/종료 상태 안내 (플레이어용) */}
+            {room?.status !== "playing" && (
+              <div style={styles.turnIndicator}>
+                {room?.status === "waiting" ? "게임을 준비 중입니다." : "게임이 종료되었습니다."}
+              </div>
             )}
           </div>
         </section>
@@ -361,10 +427,7 @@ export default function GameRoomPage() {
   );
 }
 
-// ─────────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────────
-
+// ─── 스타일 (기존 스타일 유지 및 일부 추가) ────────────────
 const styles: Record<string, React.CSSProperties> = {
   wrapper: {
     height: "100vh",
@@ -391,12 +454,12 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
   },
   headerTitle: { fontSize: "1.1rem", fontWeight: 700 },
-  headerStats: { display: "flex", gap: "10px" },
+  headerStats: { display: "flex", gap: "12px" },
   badge: {
-    padding: "4px 10px",
+    padding: "4px 12px",
     backgroundColor: "#334155",
     borderRadius: "100px",
-    fontSize: "0.75rem",
+    fontSize: "0.8rem",
     fontWeight: 600,
   },
   body: { flex: 1, display: "flex", overflow: "hidden" },
@@ -416,6 +479,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "8px",
     marginBottom: "10px",
     border: "2px solid #334155",
+    transition: "border-color 0.2s",
   },
   playerName: { fontWeight: 600, fontSize: "0.9rem" },
   playerStatus: { fontSize: "0.7rem", color: "#94a3b8", marginTop: "4px" },
@@ -425,20 +489,34 @@ const styles: Record<string, React.CSSProperties> = {
     top: "16px",
     left: "50%",
     transform: "translateX(-50%)",
-    padding: "8px 16px",
+    padding: "10px 20px",
     backgroundColor: "#1e293b",
     border: "1px solid #4f46e5",
     borderRadius: "8px",
-    fontSize: "0.875rem",
-    zIndex: 10,
-    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    fontSize: "0.9rem",
+    zIndex: 100,
+    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.4)",
+  },
+  instructionBanner: {
+    padding: "12px 24px",
+    backgroundColor: "#1e293b",
+    borderBottom: "1px solid #334155",
+    fontSize: "0.9rem",
+    color: "#cbd5e1",
+    textAlign: "center",
+    fontWeight: 500,
+  },
+  setupBox: {
+    padding: "24px",
+    backgroundColor: "#1e293b",
+    borderBottom: "1px solid #4f46e5",
   },
   logContainer: { flex: 1, padding: "24px", overflowY: "auto" },
   emptyLog: { textAlign: "center", color: "#64748b", marginTop: "40px" },
-  logItem: { marginBottom: "20px", backgroundColor: "#1e293b", padding: "16px", borderRadius: "12px" },
+  logItem: { marginBottom: "16px", backgroundColor: "#1e293b", padding: "16px", borderRadius: "12px" },
   logHeader: { fontSize: "0.75rem", color: "#94a3b8", marginBottom: "6px" },
   logQuestion: { fontSize: "1rem", fontWeight: 500 },
-  logAnswer: { marginTop: "8px", paddingLeft: "12px", borderLeft: "2px solid #059669", color: "#10b981" },
+  logAnswer: { marginTop: "8px", paddingLeft: "12px", borderLeft: "2px solid #10b981", color: "#10b981" },
   controls: { padding: "24px", backgroundColor: "#1e293b", borderTop: "1px solid #334155" },
   controlRow: { display: "flex", gap: "10px", marginBottom: "12px" },
   select: {
@@ -458,13 +536,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.9rem",
   },
   button: {
-    padding: "8px 16px",
+    padding: "8px 20px",
     backgroundColor: "#6366f1",
     color: "white",
     fontWeight: 600,
     border: "none",
     borderRadius: "8px",
     cursor: "pointer",
+    transition: "background-color 0.2s",
   },
   judgeControls: {
     padding: "16px",
