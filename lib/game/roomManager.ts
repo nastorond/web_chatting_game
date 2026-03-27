@@ -34,11 +34,11 @@ function getPlayer(room: RoomState, playerId: string): Player {
   return player;
 }
 
-/** 방의 안전한 복사본을 반환합니다. 모든 플레이어로부터 `word` 필드를 제거합니다. */
+/** 방의 안전한 복사본을 반환합니다. 모든 플레이어로부터 `secretWord` 필드를 제거합니다. */
 function publicRoom(room: RoomState): RoomState {
   return {
     ...room,
-    players: room.players.map(({ word: _w, ...rest }) => rest as Player),
+    players: room.players.map(({ secretWord: _w, ...rest }) => rest as Player),
   };
 }
 
@@ -104,13 +104,15 @@ export function joinRoom(
 
   // 중복 추가 방지 (재연결 케이스)
   if (!room.players.find((p) => p.id === playerId)) {
-    const isFirstPlayer = room.players.length === 0; // 첫 입장자인지 확인
+    const isFirstPlayer = room.players.length === 0;
 
     const newPlayer: Player = {
       id: playerId,
       name,
-      isJudge: isFirstPlayer, // 첫 번째 플레이어면 심판, 이후는 false
+      isJudge: isFirstPlayer,
       isAlive: true,
+      secretWord: null,
+      wordSubmitted: false,
     };
 
     room = { ...room, players: [...room.players, newPlayer] };
@@ -171,7 +173,7 @@ export function setTopicAndRule(
   endCondition: EndCondition
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   const room = getRoom(roomId);
-  const updated: RoomState = { ...room, topic, endCondition };
+  const updated: RoomState = { ...room, topic, endCondition, status: "word_submission" };
   rooms.set(roomId, updated);
 
   const messages: ServerToClientMessage[] = [
@@ -198,19 +200,25 @@ export function submitWord(
 
   // 원형 좌석 규칙 확인: fromPlayer는 forPlayer의 오른쪽 이웃이어야 합니다.
   const fromIdx = room.players.findIndex((p) => p.id === fromPlayerId);
+  const fromPlayer = room.players[fromIdx];
+  if (fromPlayer.wordSubmitted) throw new Error("Already submitted a word.");
+
   const expectedFromIdx = (targetIdx - 1 + room.players.length) % room.players.length;
   if (fromIdx !== expectedFromIdx) {
     throw new Error("Word assignment violates circular seating rule.");
   }
 
-  const newPlayers = room.players.map((p) =>
-    p.id === forPlayerId ? { ...p, word } : p
-  );
+  const newPlayers = room.players.map((p) => {
+    if (p.id === forPlayerId) return { ...p, secretWord: word };
+    if (p.id === fromPlayerId) return { ...p, wordSubmitted: true };
+    return p;
+  });
   const updated: RoomState = { ...room, players: newPlayers };
   rooms.set(roomId, updated);
 
-  const allAssigned = updated.players.every(
-    (p) => p.isJudge || p.word !== undefined
+  const nonJudge = updated.players.filter(p => !p.isJudge);
+  const allAssigned = nonJudge.length >= 2 && nonJudge.every(
+    (p) => p.secretWord !== null
   );
 
   const messages: ServerToClientMessage[] = [];
@@ -361,8 +369,8 @@ export function handleGuessWord(
   const player = getPlayer(room, playerId);
 
   const correct =
-    !!player.word &&
-    player.word.trim().toLowerCase() === guessText.trim().toLowerCase();
+    !!player.secretWord &&
+    player.secretWord.trim().toLowerCase() === guessText.trim().toLowerCase();
 
   const messages: ServerToClientMessage[] = [];
 
@@ -372,10 +380,16 @@ export function handleGuessWord(
       p.id === playerId ? { ...p, isAlive: false } : p
     );
     room = { ...room, players: newPlayers };
+
+    // 첫 번째 승자 모드 혹은 승리 시 즉시 종료 처리 지원
+    if (room.endCondition === "firstWin") {
+      room.status = "finished";
+      room.winnerPlayerId = playerId;
+    }
     rooms.set(roomId, room);
   }
 
-  messages.push({ type: "guess_result", playerId, correct, word: correct ? player.word : undefined });
+  messages.push({ type: "guess_result", playerId, correct, word: correct ? (player.secretWord ?? undefined) : undefined });
   messages.push({ type: "room_state", room: publicRoom(room) });
 
   const gameOver = checkGameOver(room);
@@ -442,6 +456,6 @@ export function getRoomQuestions(roomId: string): Question[] {
 }
 
 /** 특정 플레이어에게 할당된 단어를 반환합니다 (서버 전용). */
-export function getPlayerWord(roomId: string, playerId: string): string | undefined {
-  return getRoom(roomId).players.find((p) => p.id === playerId)?.word;
+export function getPlayerWord(roomId: string, playerId: string): string | null | undefined {
+  return getRoom(roomId).players.find((p) => p.id === playerId)?.secretWord;
 }

@@ -7,7 +7,8 @@ export interface Player {
   name: string;
   isJudge: boolean;
   isAlive: boolean;   // 플레이어가 자신의 단어를 올바르게 맞추면 false가 됨
-  word?: string;      // 서버 전용: 각 플레이어에게 할당된 단어
+  secretWord: string | null; // 각 플레이어에게 할당된 비밀 단어 (본인은 모름)
+  wordSubmitted: boolean;    // 이 플레이어가 다음 사람의 단어를 제출했는지 여부
   penaltyUntil?: number; // 침묵(Mute)이 종료되는 Unix MS 타임스탬프
 }
 
@@ -21,7 +22,8 @@ export interface RoomState {
   endCondition: EndCondition | null;
   round: number;
   turnIndex: number;  // 현재 발언 차례인 플레이어의 index (players[] 내 인덱스)
-  status: "waiting" | "playing" | "finished";
+  status: "waiting" | "word_submission" | "playing" | "finished";
+  winnerPlayerId?: string | null; // 게임 종료 시 승리한 플레이어 ID
   createdAt: number;  // 생성 시점 (Unix MS)
 }
 
