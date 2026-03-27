@@ -46,6 +46,20 @@ export async function POST(
         result = roomManager.handleChat(roomId, playerId, action.text);
         break;
 
+      case "post_question":
+        if (!action.text) {
+          return NextResponse.json({ error: "질문 내용이 필요합니다." }, { status: 400 });
+        }
+        result = roomManager.postQuestion(roomId, playerId, action.text);
+        break;
+
+      case "post_answer":
+        if (!action.text) {
+          return NextResponse.json({ error: "전달할 내용이 필요합니다." }, { status: 400 });
+        }
+        result = roomManager.postAnswer(roomId, playerId, action.text);
+        break;
+
       case "guess_word":
         if (!action.text) {
           return NextResponse.json({ error: "추측할 text가 필요합니다." }, { status: 400 });

@@ -27,7 +27,12 @@ export default function GameRoomPage() {
   const [topicInput, setTopicInput] = useState("");
   const [wordInput, setWordInput] = useState("");
   const [chatInput, setChatInput] = useState("");
-  const [guessText, setGuessText] = useState("");
+
+  // 모달 상태 (질문/정답 전용)
+  const [questionModalOpen, setQuestionModalOpen] = useState(false);
+  const [answerModalOpen, setAnswerModalOpen] = useState(false);
+  const [questionText, setQuestionText] = useState("");
+  const [answerText, setAnswerText] = useState("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -159,10 +164,20 @@ export default function GameRoomPage() {
     setChatInput("");
   };
 
-  const handleGuess = () => {
-    if (!guessText) return;
-    performAction({ type: "guess_word", text: guessText });
-    setGuessText("");
+  const handlePostQuestion = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!questionText.trim()) return;
+    performAction({ type: "post_question", text: questionText });
+    setQuestionText("");
+    setQuestionModalOpen(false);
+  };
+
+  const handlePostAnswer = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!answerText.trim()) return;
+    performAction({ type: "post_answer", text: answerText });
+    setAnswerText("");
+    setAnswerModalOpen(false);
   };
 
   if (loading) return <div style={styles.fullscreenCenter}>접속 중...</div>;
@@ -191,6 +206,8 @@ export default function GameRoomPage() {
     switch (kind) {
       case "system": return styles.chatSystem;
       case "guess": return styles.chatGuess;
+      case "question": return styles.chatQuestion;
+      case "answer": return styles.chatAnswer;
       default: return styles.chatNormal;
     }
   };
@@ -221,12 +238,16 @@ export default function GameRoomPage() {
           <div style={styles.playerList}>
             {room?.players.map((p) => {
               const v = visibleWords.find(vw => vw.playerId === p.id);
+              const active = room?.status === "playing" && p.id === currentTurnPlayer?.id;
               return (
                 <div key={p.id} style={{
                   ...styles.playerCard,
-                  borderColor: room?.status === "playing" && p.id === currentTurnPlayer?.id ? "#818cf8" : "#334155"
+                  borderColor: active ? "#818cf8" : "#334155",
+                  backgroundColor: active ? "rgba(129, 140, 248, 0.1)" : "#1e293b",
+                  boxShadow: active ? "0 0 10px rgba(129, 140, 248, 0.3)" : "none"
                 }}>
                   <div style={styles.playerName}>
+                    {active && <span style={{ marginRight: "4px" }}>▶</span>}
                     {p.name} {p.id === myPlayerId && "(나)"} {p.isJudge && "⚖️"}
                   </div>
                   <div style={styles.playerWord}>
@@ -324,7 +345,12 @@ export default function GameRoomPage() {
               <div style={styles.logContainer} ref={scrollRef}>
                 {chatMessages.map((msg) => (
                   <div key={msg.id} style={{ ...styles.chatRow, ...getChatStyle(msg.kind) }}>
-                    {msg.kind === "chat" && (
+                    {(msg.kind === "question" || msg.kind === "answer") && (
+                      <div style={msg.kind === "question" ? styles.questionTag : styles.answerTag}>
+                        {msg.kind === "question" ? "[질문]" : "[정답 시도]"}
+                      </div>
+                    )}
+                    {msg.kind !== "system" && msg.kind !== "guess" && (
                       <span style={styles.chatAuthor}>
                         {room.players.find(p => p.id === msg.playerId)?.name || "Unknown"}:
                       </span>
@@ -348,10 +374,18 @@ export default function GameRoomPage() {
               {/* 플레이어 조작 영역 */}
               {room?.status === "playing" && (
                 <div style={styles.actionPanel}>
+                  {/* 턴 액션 버튼 */}
+                  {isMyTurn && !iAmJudge && (
+                    <div style={styles.turnButtonGroup}>
+                      <button style={styles.actionButton} onClick={() => setQuestionModalOpen(true)}>질문하기</button>
+                      <button style={{ ...styles.actionButton, backgroundColor: "#059669" }} onClick={() => setAnswerModalOpen(true)}>정답 시도하기</button>
+                    </div>
+                  )}
+                  {/* 자유 채팅 입력 */}
                   <form onSubmit={handleSendChat} style={styles.actionRow}>
                     <input
                       style={{ ...styles.input, flex: 1, marginBottom: 0 }}
-                      placeholder="메시지를 입력하세요"
+                      placeholder="자유롭게 채팅하세요 (질문/답변은 버튼 클릭)"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       disabled={loadingAction}
@@ -360,26 +394,52 @@ export default function GameRoomPage() {
                       전송
                     </button>
                   </form>
-                  {!iAmJudge && (
-                    <div style={{ ...styles.actionRow, marginTop: "12px" }}>
-                      <input
-                        style={{ ...styles.input, flex: 1, marginBottom: 0 }}
-                        placeholder="정답 추측 (내 단어 맞추기)"
-                        value={guessText}
-                        onChange={(e) => setGuessText(e.target.value)}
-                        disabled={loadingAction}
-                      />
-                      <button style={{ ...styles.button, width: "120px", backgroundColor: "#059669" }} onClick={handleGuess} disabled={loadingAction || !guessText}>
-                        정답 시도
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           )}
         </section>
       </main>
+
+      {/* 질문 모달 */}
+      {questionModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <h3>❓ 질문하기</h3>
+            <p>공통 채팅창에 공개될 질문을 입력하세요.</p>
+            <textarea
+              style={styles.textarea}
+              placeholder="질문을 입력하세요..."
+              value={questionText}
+              onChange={(e) => setQuestionText(e.target.value)}
+            />
+            <div style={styles.modalButtons}>
+              <button style={styles.modalCancel} onClick={() => setQuestionModalOpen(false)}>취소</button>
+              <button style={styles.modalSubmit} onClick={handlePostQuestion}>질문 전송</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 정답 모달 */}
+      {answerModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <h3>🎯 정답 제시하기</h3>
+            <p>당신의 비밀 단어는 무엇인가요?</p>
+            <input
+              style={styles.input}
+              placeholder="예상 단어 입력"
+              value={answerText}
+              onChange={(e) => setAnswerText(e.target.value)}
+            />
+            <div style={styles.modalButtons}>
+              <button style={styles.modalCancel} onClick={() => setAnswerModalOpen(false)}>취소</button>
+              <button style={{ ...styles.modalSubmit, backgroundColor: "#059669" }} onClick={handlePostAnswer}>정답 시도</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -396,7 +456,7 @@ const styles: Record<string, React.CSSProperties> = {
   sidebar: { width: "280px", backgroundColor: "#111827", padding: "20px", borderRight: "1px solid #334155", display: "flex", flexDirection: "column" },
   sidebarHeader: { fontSize: "0.9rem", color: "#94a3b8", marginBottom: "16px", textTransform: "uppercase" },
   playerList: { flex: 1, overflowY: "auto" },
-  playerCard: { padding: "12px", backgroundColor: "#1e293b", borderRadius: "8px", marginBottom: "8px", border: "2px solid #334155" },
+  playerCard: { padding: "12px", borderRadius: "8px", marginBottom: "8px", border: "2px solid #334155", transition: "all 0.2s" },
   playerName: { fontWeight: 600, fontSize: "0.95rem" },
   playerWord: { fontSize: "0.85rem", marginTop: "4px", fontWeight: 500 },
   content: { flex: 1, display: "flex", flexDirection: "column", position: "relative" },
@@ -408,17 +468,29 @@ const styles: Record<string, React.CSSProperties> = {
   gameArea: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
   turnInfo: { padding: "12px 24px", backgroundColor: "#1e293b", borderBottom: "1px solid #334155", display: "flex", alignItems: "center" },
   myTurnBadge: { marginLeft: "20px", padding: "2px 10px", backgroundColor: "#4f46e5", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 700 },
-  logContainer: { flex: 1, padding: "24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" },
-  chatRow: { padding: "6px 12px", borderRadius: "6px", maxWidth: "80%" },
-  chatNormal: { backgroundColor: "transparent" },
-  chatSystem: { backgroundColor: "rgba(148, 163, 184, 0.1)", color: "#94a3b8", fontSize: "0.85rem", alignSelf: "center", textAlign: "center", maxWidth: "90%" },
-  chatGuess: { backgroundColor: "rgba(79, 70, 229, 0.1)", border: "1px solid rgba(79, 70, 229, 0.3)", color: "#c7d2fe", alignSelf: "center" },
+  logContainer: { flex: 1, padding: "24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" },
+  chatRow: { padding: "8px 14px", borderRadius: "12px", maxWidth: "80%" },
+  chatNormal: { backgroundColor: "rgba(255,255,255,0.05)", alignSelf: "flex-start" },
+  chatSystem: { backgroundColor: "rgba(148, 163, 184, 0.1)", color: "#94a3b8", fontSize: "0.85rem", alignSelf: "center", textAlign: "center", maxWidth: "90%", borderRadius: "20px" },
+  chatGuess: { backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#fca5a5", alignSelf: "center", borderRadius: "8px" },
+  chatQuestion: { backgroundColor: "rgba(16, 185, 129, 0.1)", border: "2px solid #10b981", alignSelf: "flex-start" },
+  chatAnswer: { backgroundColor: "rgba(59, 130, 246, 0.1)", border: "2px solid #3b82f6", alignSelf: "flex-start" },
   chatAuthor: { fontWeight: 700, marginRight: "8px", color: "#818cf8" },
   chatText: { wordBreak: "break-all" },
+  questionTag: { fontSize: "0.7rem", fontWeight: 800, color: "#10b981", marginBottom: "2px", textTransform: "uppercase" },
+  answerTag: { fontSize: "0.7rem", fontWeight: 800, color: "#3b82f6", marginBottom: "2px", textTransform: "uppercase" },
   finishAnnouncement: { padding: "40px", textAlign: "center", backgroundColor: "#1e293b", borderRadius: "16px", marginTop: "20px", border: "2px solid #fbbf24" },
-  actionPanel: { padding: "24px", backgroundColor: "#1e293b", borderTop: "1px solid #334155" },
+  actionPanel: { padding: "20px 24px", backgroundColor: "#1e293b", borderTop: "1px solid #334155" },
+  turnButtonGroup: { display: "flex", gap: "12px", marginBottom: "12px" },
+  actionButton: { flex: 1, padding: "10px", backgroundColor: "#4f46e5", color: "white", fontWeight: 800, borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.9rem" },
   actionRow: { display: "flex", gap: "10px" },
   input: { width: "100%", padding: "12px", backgroundColor: "#334155", border: "1px solid #475569", borderRadius: "8px", color: "#f1f5f9", marginBottom: "0px", fontSize: "1rem" },
+  textarea: { width: "100%", height: "100px", padding: "12px", backgroundColor: "#334155", border: "1px solid #475569", borderRadius: "8px", color: "#f1f5f9", fontSize: "1rem", resize: "none" },
   select: { padding: "8px 12px", backgroundColor: "#334155", border: "1px solid #475569", borderRadius: "8px", color: "#f1f5f9" },
   button: { width: "100%", padding: "12px", backgroundColor: "#6366f1", color: "white", fontWeight: 700, border: "none", borderRadius: "8px", cursor: "pointer" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" },
+  modalContent: { maxWidth: "450px", width: "100%", backgroundColor: "#1e293b", padding: "32px", borderRadius: "20px", border: "1px solid #334155", textAlign: "left" },
+  modalButtons: { display: "flex", gap: "12px", marginTop: "20px" },
+  modalSubmit: { flex: 2, padding: "12px", backgroundColor: "#4f46e5", color: "white", fontWeight: 700, borderRadius: "8px", border: "none", cursor: "pointer" },
+  modalCancel: { flex: 1, padding: "12px", backgroundColor: "transparent", color: "#94a3b8", fontWeight: 700, borderRadius: "8px", border: "1px solid #334155", cursor: "pointer" },
 };

@@ -60,6 +60,28 @@ function addSystemMessage(roomId: string, text: string) {
   chatMessagesByRoom.set(roomId, messages);
 }
 
+/** 턴 넘기기 헬퍼 (심판 및 탈락자 제외) */
+function nextTurn(room: RoomState): RoomState {
+  const players = room.players;
+  let newIndex = room.turnIndex;
+  let round = room.round;
+
+  // 최대 players.length만큼 순회하며 유효한 다음 플레이어 찾기
+  for (let i = 0; i < players.length; i++) {
+    newIndex = (newIndex + 1) % players.length;
+    
+    // 한 바퀴 돌았으면 라운드 증가
+    if (newIndex === 0) round++;
+
+    const p = players[newIndex];
+    if (!p.isJudge && p.isAlive) {
+      return { ...room, turnIndex: newIndex, round };
+    }
+  }
+
+  return { ...room, turnIndex: newIndex, round };
+}
+
 // ─────────────────────────────────────────────
 // 방 생명주기
 // ─────────────────────────────────────────────
@@ -160,7 +182,7 @@ export function setTopicAndRule(
   rooms.set(roomId, updated);
 
   addSystemMessage(roomId, `게임이 시작되었습니다! 주제: [${topic}]`);
-  addSystemMessage(roomId, `각 플레이어는 왼쪽 사람에게 배정할 단어를 입력해주세요.`);
+  addSystemMessage(roomId, `각 플레이어는 배정할 단어를 입력해주세요. (서버가 자동으로 할당합니다.)`);
 
   const messages: ServerToClientMessage[] = [
     { type: "topic_set", topic, endCondition },
@@ -199,9 +221,16 @@ export function submitWord(
 
   const messages: ServerToClientMessage[] = [];
   if (allAssigned) {
-    const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: 0 };
+    // 첫 턴 시작 (심판 제외 첫 번째 플레이어 찾기)
+    let firstTurnIdx = 0;
+    while(updated.players[firstTurnIdx]?.isJudge) {
+      firstTurnIdx = (firstTurnIdx + 1) % updated.players.length;
+    }
+
+    const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: firstTurnIdx };
     rooms.set(roomId, playing);
     addSystemMessage(roomId, `모든 단어 배정이 완료되었습니다. 게임을 시작합니다!`);
+    addSystemMessage(roomId, `현재 차례: ${playing.players[firstTurnIdx].name}`);
     messages.push({ type: "words_assigned" });
     messages.push({ type: "room_state", room: publicRoom(playing) });
   }
@@ -236,31 +265,75 @@ export function handleChat(
   return { room, messages: [{ type: "chat_posted", message: chatMsg }] };
 }
 
-/** 정답 추측 핸들러 */
-export function handleGuessWord(
+/** 질문 등록 핸들러 */
+export function postQuestion(
   roomId: string,
   playerId: string,
-  guessText: string
+  text: string
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   let room = getRoom(roomId);
   const player = getPlayer(room, playerId);
 
-  const correct =
-    !!player.secretWord &&
-    player.secretWord.trim().toLowerCase() === guessText.trim().toLowerCase();
+  if (room.players[room.turnIndex]?.id !== playerId) {
+    throw new Error("현재 차례가 아닙니다.");
+  }
 
-  const messages: ServerToClientMessage[] = [];
-
-  // 채팅에 추측 결과 기록
-  const guessMsg: ChatMessage = {
+  const messages = chatMessagesByRoom.get(roomId) || [];
+  const msg: ChatMessage = {
     id: generateId(),
     playerId,
-    text: `[정답 시도] ${guessText} -> ${correct ? "성공! 🎉" : "실패 ❌"}`,
+    text,
+    kind: "question",
+    timestamp: Date.now(),
+  };
+  messages.push(msg);
+  chatMessagesByRoom.set(roomId, messages);
+
+  // 턴 넘기기
+  room = nextTurn(room);
+  rooms.set(roomId, room);
+  addSystemMessage(roomId, `다음 차례: ${room.players[room.turnIndex].name}`);
+
+  return { room, messages: [{ type: "chat_posted", message: msg }, { type: "room_state", room: publicRoom(room) }] };
+}
+
+/** 정답 시도 핸들러 */
+export function postAnswer(
+  roomId: string,
+  playerId: string,
+  text: string
+): { room: RoomState; messages: ServerToClientMessage[] } {
+  let room = getRoom(roomId);
+  const player = getPlayer(room, playerId);
+
+  if (room.players[room.turnIndex]?.id !== playerId) {
+    throw new Error("현재 차례가 아닙니다.");
+  }
+
+  // 채팅에 기록 (kind: answer)
+  const chatLog = chatMessagesByRoom.get(roomId) || [];
+  const msg: ChatMessage = {
+    id: generateId(),
+    playerId,
+    text,
+    kind: "answer",
+    timestamp: Date.now(),
+  };
+  chatLog.push(msg);
+  chatMessagesByRoom.set(roomId, chatLog);
+
+  // 정답 판정 (기존 handleGuessWord 로직 활용)
+  const correct = !!player.secretWord && player.secretWord.trim().toLowerCase() === text.trim().toLowerCase();
+  
+  // 정답 시도 결과 메시지 추가 (kind: guess)
+  const resultMsg: ChatMessage = {
+    id: generateId(),
+    playerId,
+    text: `[정답 시도] ${text} -> ${correct ? "성공! 🎉" : "실패 ❌"}`,
     kind: "guess",
     timestamp: Date.now(),
   };
-  const chatLog = chatMessagesByRoom.get(roomId) || [];
-  chatLog.push(guessMsg);
+  chatLog.push(resultMsg);
   chatMessagesByRoom.set(roomId, chatLog);
 
   if (correct) {
@@ -274,13 +347,27 @@ export function handleGuessWord(
       room.winnerPlayerId = playerId;
       addSystemMessage(roomId, `🏆 게임 종료! 승자: ${player.name}`);
     }
-    rooms.set(roomId, room);
   }
 
-  messages.push({ type: "guess_result", playerId, correct, word: correct ? (player.secretWord ?? undefined) : undefined });
-  messages.push({ type: "room_state", room: publicRoom(room) });
+  // 턴 넘기기 (게임이 종료되지 않은 경우에만)
+  if (room.status === "playing") {
+    room = nextTurn(room);
+    addSystemMessage(roomId, `다음 차례: ${room.players[room.turnIndex].name}`);
+  }
+  
+  rooms.set(roomId, room);
 
-  return { room, messages };
+  return { room, messages: [{ type: "room_state", room: publicRoom(room) }] };
+}
+
+/** 정답 추측 핸들러 (기존 호환용 유지) */
+export function handleGuessWord(
+  roomId: string,
+  playerId: string,
+  guessText: string
+): { room: RoomState; messages: ServerToClientMessage[] } {
+  // postAnswer와 유사하지만 turn 제약이 없을 수 있는 용도로 남겨둠 (필요시 호출)
+  return postAnswer(roomId, playerId, guessText);
 }
 
 /** 심판 조치 */

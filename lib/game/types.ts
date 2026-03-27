@@ -35,7 +35,7 @@ export interface ChatMessage {
   id: string;
   playerId: string;
   text: string;
-  kind: "chat" | "system" | "guess";
+  kind: "chat" | "system" | "guess" | "question" | "answer";
   timestamp: number;
 }
 
@@ -49,6 +49,8 @@ export type ClientToServerMessage =
   | { type: "set_topic_and_rule"; topic: string; endCondition: EndCondition }
   | { type: "submit_word"; forPlayerId: string; word: string }
   | { type: "chat"; text: string }
+  | { type: "post_question"; text: string }
+  | { type: "post_answer"; text: string }
   | { type: "guess_word"; text: string }
   | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" };
 
