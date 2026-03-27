@@ -104,12 +104,15 @@ export function joinRoom(
 
   // 중복 추가 방지 (재연결 케이스)
   if (!room.players.find((p) => p.id === playerId)) {
+    const isFirstPlayer = room.players.length === 0; // 첫 입장자인지 확인
+
     const newPlayer: Player = {
       id: playerId,
       name,
-      isJudge: false,
+      isJudge: isFirstPlayer, // 첫 번째 플레이어면 심판, 이후는 false
       isAlive: true,
     };
+
     room = { ...room, players: [...room.players, newPlayer] };
     rooms.set(roomId, room);
   }
