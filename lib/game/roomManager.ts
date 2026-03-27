@@ -322,6 +322,14 @@ export function getPublicRoom(roomId: string): RoomState {
   return publicRoom(getRoom(roomId));
 }
 
+export function getVisibleWords(roomId: string, viewerPlayerId: string): { playerId: string; word: string | null }[] {
+  const room = getRoom(roomId);
+  return room.players.map(p => ({
+    playerId: p.id,
+    word: p.id === viewerPlayerId ? null : p.secretWord,
+  }));
+}
+
 export function getRoomChatMessages(roomId: string): ChatMessage[] {
   return chatMessagesByRoom.get(roomId) || [];
 }

@@ -77,13 +77,15 @@ export async function POST(
         return NextResponse.json({ error: "지원하지 않는 액션 타입입니다." }, { status: 400 });
     }
 
-    // 처리 후 최신 상태 반환
+    // 처리 후 최신 상태 및 가시 단어 목록 반환
     const room = roomManager.getPublicRoom(roomId);
     const chatMessages = roomManager.getRoomChatMessages(roomId);
+    const visibleWords = roomManager.getVisibleWords(roomId, playerId);
 
     return NextResponse.json({
       room,
       chatMessages,
+      visibleWords,
       messages: result?.messages || [],
     });
   } catch (error: any) {

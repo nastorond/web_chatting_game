@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPublicRoom, getRoomChatMessages } from "@/lib/game/roomManager";
+import { getPublicRoom, getRoomChatMessages, getVisibleWords } from "@/lib/game/roomManager";
 
 /**
  * [GET] /api/room/[roomId]/state
- * 방의 최신 상태(RoomState)와 채팅 메시지 리스트를 반환합니다.
+ * 방의 최신 상태(RoomState), 채팅 메시지 소량, 그리고 관찰자별 가시 단어 목록을 반환합니다.
  */
 export async function GET(
   req: NextRequest,
@@ -11,13 +11,21 @@ export async function GET(
 ) {
   try {
     const { roomId } = await context.params;
+    const { searchParams } = new URL(req.url);
+    const playerId = searchParams.get("playerId");
+
+    if (!playerId) {
+      return NextResponse.json({ error: "playerId query parameter is required" }, { status: 400 });
+    }
 
     const room = getPublicRoom(roomId);
     const chatMessages = getRoomChatMessages(roomId);
+    const visibleWords = getVisibleWords(roomId, playerId);
 
     return NextResponse.json({
       room,
       chatMessages,
+      visibleWords,
     });
   } catch (error: any) {
     return NextResponse.json(

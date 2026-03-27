@@ -17,6 +17,7 @@ export default function GameRoomPage() {
   // ─── 상태 관리 ──────────────────────────────────
   const [room, setRoom] = useState<RoomState | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [visibleWords, setVisibleWords] = useState<{ playerId: string; word: string | null }[]>([]);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingAction, setLoadingAction] = useState(false);
@@ -59,6 +60,7 @@ export default function GameRoomPage() {
 
         setRoom(data.room);
         setChatMessages(data.chatMessages || []);
+        setVisibleWords(data.visibleWords || []);
         setLoading(false);
         startPolling();
       } catch (err: any) {
@@ -82,11 +84,12 @@ export default function GameRoomPage() {
 
   const fetchState = async () => {
     try {
-      const res = await fetch(`/api/room/${roomIdStr}/state`);
+      const res = await fetch(`/api/room/${roomIdStr}/state?playerId=${myPlayerId}`);
       if (!res.ok) return;
       const data = await res.json();
       if (data.room) setRoom(data.room);
       if (data.chatMessages) setChatMessages(data.chatMessages);
+      if (data.visibleWords) setVisibleWords(data.visibleWords);
     } catch (err) {
       console.error("Polling error:", err);
     }
@@ -114,6 +117,7 @@ export default function GameRoomPage() {
 
       if (data.room) setRoom(data.room);
       if (data.chatMessages) setChatMessages(data.chatMessages);
+      if (data.visibleWords) setVisibleWords(data.visibleWords);
       
       if (data.messages) {
         data.messages.forEach((msg: ServerToClientMessage) => {
@@ -215,18 +219,32 @@ export default function GameRoomPage() {
         <aside style={styles.sidebar}>
           <h3 style={styles.sidebarHeader}>플레이어 ({room?.players.length})</h3>
           <div style={styles.playerList}>
-            {room?.players.map((p) => (
-              <div key={p.id} style={{
-                ...styles.playerCard,
-                borderColor: room?.status === "playing" && p.id === currentTurnPlayer?.id ? "#818cf8" : "#334155"
-              }}>
-                <div style={styles.playerName}>
-                  {p.name} {p.id === myPlayerId && "(나)"} {p.isJudge && "⚖️"}
+            {room?.players.map((p) => {
+              const v = visibleWords.find(vw => vw.playerId === p.id);
+              return (
+                <div key={p.id} style={{
+                  ...styles.playerCard,
+                  borderColor: room?.status === "playing" && p.id === currentTurnPlayer?.id ? "#818cf8" : "#334155"
+                }}>
+                  <div style={styles.playerName}>
+                    {p.name} {p.id === myPlayerId && "(나)"} {p.isJudge && "⚖️"}
+                  </div>
+                  <div style={styles.playerWord}>
+                    {p.id === myPlayerId ? (
+                      <span style={{ color: "#94a3b8" }}>내 단어: ???</span>
+                    ) : (
+                      v?.word ? (
+                        <span style={{ color: "#fbbf24" }}>단어: {v.word}</span>
+                      ) : (
+                        <span style={{ color: "#64748b" }}>단어: (미정)</span>
+                      )
+                    )}
+                  </div>
+                  {p.wordSubmitted && <div style={{ fontSize: "0.7rem", color: "#10b981", marginTop: "4px" }}>단어 제출됨 ✓</div>}
+                  {!p.isAlive && <div style={{ fontSize: "0.7rem", color: "#ef4444", marginTop: "4px" }}>게임 종료 🏁</div>}
                 </div>
-                {p.wordSubmitted && <div style={{ fontSize: "0.7rem", color: "#10b981" }}>단어 제출됨 ✓</div>}
-                {!p.isAlive && <div style={{ fontSize: "0.7rem", color: "#ef4444" }}>게임 종료 🏁</div>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </aside>
 
@@ -263,7 +281,7 @@ export default function GameRoomPage() {
             <div style={styles.centerBox}>
               <div style={styles.setupCard}>
                 <h2>📝 단어 배정 단계</h2>
-                <p>왼쪽 플레이어인 <strong>{targetForWordAssign?.name}</strong>님에게 줄 단어를 정해주세요.</p>
+                <p>배정할 단어를 입력해주세요.<br/><small style={{ color: "#94a3b8" }}>(서버가 자동으로 다른 플레이어에게 할당합니다.)</small></p>
                 
                 {me?.wordSubmitted ? (
                   <div style={styles.successText}>
@@ -333,7 +351,7 @@ export default function GameRoomPage() {
                   <form onSubmit={handleSendChat} style={styles.actionRow}>
                     <input
                       style={{ ...styles.input, flex: 1, marginBottom: 0 }}
-                      placeholder="메시지를 입력하세요 (자유롭게 질문/답변)"
+                      placeholder="메시지를 입력하세요"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       disabled={loadingAction}
@@ -368,7 +386,7 @@ export default function GameRoomPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   wrapper: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#0f172a", color: "#f1f5f9" },
-  fullscreenCenter: { height: "100vh", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", fontSize: "1.2rem", backgroundColor: "#0f172a", color: "#f1f5f9" },
+  fullscreenCenter: { height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", backgroundColor: "#0f172a", color: "#f1f5f9" },
   header: { padding: "16px 24px", backgroundColor: "#1e293b", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" },
   headerTitle: { fontSize: "1.2rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "12px" },
   topicTag: { fontSize: "0.9rem", color: "#fbbf24", backgroundColor: "rgba(251, 191, 36, 0.1)", padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(251, 191, 36, 0.3)" },
@@ -380,6 +398,7 @@ const styles: Record<string, React.CSSProperties> = {
   playerList: { flex: 1, overflowY: "auto" },
   playerCard: { padding: "12px", backgroundColor: "#1e293b", borderRadius: "8px", marginBottom: "8px", border: "2px solid #334155" },
   playerName: { fontWeight: 600, fontSize: "0.95rem" },
+  playerWord: { fontSize: "0.85rem", marginTop: "4px", fontWeight: 500 },
   content: { flex: 1, display: "flex", flexDirection: "column", position: "relative" },
   errorBanner: { position: "absolute", top: "16px", left: "50%", transform: "translateX(-50%)", padding: "10px 24px", backgroundColor: "#ef4444", color: "white", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 100, fontWeight: 600 },
   centerBox: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" },
