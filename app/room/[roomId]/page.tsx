@@ -302,27 +302,36 @@ export default function GameRoomPage() {
             <div style={styles.centerBox}>
               <div style={styles.setupCard}>
                 <h2>📝 단어 배정 단계</h2>
-                <p>배정할 단어를 입력해주세요.<br/><small style={{ color: "#94a3b8" }}>(서버가 자동으로 다른 플레이어에게 할당합니다.)</small></p>
-                
-                {me?.wordSubmitted ? (
-                  <div style={styles.successText}>
-                    단어를 제출했습니다. 다른 플레이어들이 완료할 때까지 기다려주세요.
+                {iAmJudge ? (
+                  <div style={styles.infoText}>
+                    진행자(심판)는 단어를 제출하지 않습니다.<br/>
+                    플레이어들이 단어를 제출할 때까지 기다려 주세요.
                   </div>
                 ) : (
                   <>
-                    <input
-                      style={styles.input}
-                      placeholder="배정할 단어 입력"
-                      value={wordInput}
-                      onChange={(e) => setWordInput(e.target.value)}
-                    />
-                    <button 
-                      style={styles.button} 
-                      onClick={() => targetForWordAssign && handleSubmitWord(targetForWordAssign.id)} 
-                      disabled={loadingAction}
-                    >
-                      {loadingAction ? "제출 중..." : "단어 제출"}
-                    </button>
+                    <p>배정할 단어를 입력해주세요.<br/><small style={{ color: "#94a3b8" }}>(서버가 자동으로 다른 플레이어에게 할당합니다.)</small></p>
+                    
+                    {me?.wordSubmitted ? (
+                      <div style={styles.successText}>
+                        단어를 제출했습니다. 다른 플레이어들이 완료할 때까지 기다려주세요.
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          style={styles.input}
+                          placeholder="배정할 단어 입력"
+                          value={wordInput}
+                          onChange={(e) => setWordInput(e.target.value)}
+                        />
+                        <button 
+                          style={styles.button} 
+                          onClick={() => targetForWordAssign && handleSubmitWord(targetForWordAssign.id)} 
+                          disabled={loadingAction}
+                        >
+                          {loadingAction ? "제출 중..." : "단어 제출"}
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
               </div>

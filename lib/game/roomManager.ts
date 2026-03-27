@@ -198,21 +198,37 @@ export function submitWord(
   word: string
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   const room = getRoom(roomId);
-  const targetIdx = room.players.findIndex((p) => p.id === forPlayerId);
-  const fromIdx = room.players.findIndex((p) => p.id === fromPlayerId);
-  
-  if (targetIdx === -1 || fromIdx === -1) throw new Error("Player not found.");
-  const fromPlayer = room.players[fromIdx];
-  if (fromPlayer.wordSubmitted) throw new Error("Already submitted.");
+  const fromPlayer = getPlayer(room, fromPlayerId);
 
-  const expectedFromIdx = (targetIdx - 1 + room.players.length) % room.players.length;
-  if (fromIdx !== expectedFromIdx) throw new Error("Circular rule violation.");
+  // 심판은 단어 제출 불가
+  if (fromPlayer.isJudge) {
+    throw new Error("진행자(심판)는 단어를 제출할 수 없습니다.");
+  }
+
+  const nonJudgePlayers = room.players.filter(p => !p.isJudge);
+  const fromIdxInNonJudge = nonJudgePlayers.findIndex(p => p.id === fromPlayerId);
+  const targetIdxInNonJudge = nonJudgePlayers.findIndex(p => p.id === forPlayerId);
+
+  if (fromIdxInNonJudge === -1 || targetIdxInNonJudge === -1) {
+    throw new Error("플레이어를 찾을 수 없습니다.");
+  }
+
+  if (fromPlayer.wordSubmitted) {
+    throw new Error("이미 단어를 제출하였습니다.");
+  }
+
+  // 원형 규칙: non-judge 사이에서만 (i -> i+1)
+  const expectedFromIdxInNonJudge = (targetIdxInNonJudge - 1 + nonJudgePlayers.length) % nonJudgePlayers.length;
+  if (fromIdxInNonJudge !== expectedFromIdxInNonJudge) {
+    throw new Error("단어 배정 규칙 위반 (본인의 다음 플레이어에게만 줄 수 있습니다).");
+  }
 
   const newPlayers = room.players.map((p) => {
     if (p.id === forPlayerId) return { ...p, secretWord: word };
     if (p.id === fromPlayerId) return { ...p, wordSubmitted: true };
     return p;
   });
+
   const updated: RoomState = { ...room, players: newPlayers };
   rooms.set(roomId, updated);
 
@@ -221,16 +237,16 @@ export function submitWord(
 
   const messages: ServerToClientMessage[] = [];
   if (allAssigned) {
-    // 첫 턴 시작 (심판 제외 첫 번째 플레이어 찾기)
-    let firstTurnIdx = 0;
-    while(updated.players[firstTurnIdx]?.isJudge) {
-      firstTurnIdx = (firstTurnIdx + 1) % updated.players.length;
-    }
+    // 첫 턴 시작 (심판 제외 첫 번째 일반 플레이어)
+    const firstTurnPlayer = nonJudge[0];
+    const firstTurnIdx = updated.players.findIndex(p => p.id === firstTurnPlayer.id);
 
     const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: firstTurnIdx };
     rooms.set(roomId, playing);
+    
     addSystemMessage(roomId, `모든 단어 배정이 완료되었습니다. 게임을 시작합니다!`);
-    addSystemMessage(roomId, `현재 차례: ${playing.players[firstTurnIdx].name}`);
+    addSystemMessage(roomId, `현재 차례: ${firstTurnPlayer.name}`);
+    
     messages.push({ type: "words_assigned" });
     messages.push({ type: "room_state", room: publicRoom(playing) });
   }
