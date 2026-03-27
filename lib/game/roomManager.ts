@@ -431,6 +431,13 @@ export function getPublicRoom(roomId: string): RoomState {
   return publicRoom(getRoom(roomId));
 }
 
+/** 특정 방의 모든 질문 목록을 반환합니다. */
+export function getRoomQuestions(roomId: string): Question[] {
+  const roomQuestions = questionsByRoom.get(roomId);
+  if (!roomQuestions) return [];
+  return Array.from(roomQuestions.values());
+}
+
 /** 특정 플레이어에게 할당된 단어를 반환합니다 (서버 전용). */
 export function getPlayerWord(roomId: string, playerId: string): string | undefined {
   return getRoom(roomId).players.find((p) => p.id === playerId)?.word;

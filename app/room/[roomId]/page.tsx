@@ -12,32 +12,30 @@ import {
 
 /**
  * 게임 방 페이지 (app/room/[roomId]/page.tsx)
+ * WebSocket 대신 HTTP 폴링 방식으로 동작하도록 수정되었습니다.
  */
 export default function GameRoomPage() {
   const router = useRouter();
   const { roomId } = useParams<{ roomId: string }>();
-  // roomId가 string | string[] 일 수 있으니 방어하려면:
   const roomIdStr = Array.isArray(roomId) ? roomId[0] : roomId;
 
   // ─── 상태 관리 ──────────────────────────────────
   const [room, setRoom] = useState<RoomState | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<
-    "connecting" | "open" | "closed" | "error"
-  >("connecting");
+  const [loading, setLoading] = useState(true);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
-  // Input states
+  // 입력 상태
   const [askToPlayerId, setAskToPlayerId] = useState("");
   const [askText, setAskText] = useState("");
   const [guessText, setGuessText] = useState("");
   const [judgeActionTarget, setJudgeActionTarget] = useState("");
 
-  const ws = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ─── 웹소켓 이펙트 ────────────────────────
+  // ─── 초기 진입 및 폴링 로컬 로직 ────────────────────────
   useEffect(() => {
     const nickname = localStorage.getItem("nickname");
     if (!nickname) {
@@ -45,36 +43,63 @@ export default function GameRoomPage() {
       return;
     }
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId}`;
+    // playerId 관리
+    const playerIdKey = `playerId:${roomIdStr}`;
+    let playerId = localStorage.getItem(playerIdKey);
+    if (!playerId) {
+      playerId = `p-${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem(playerIdKey, playerId);
+    }
+    setMyPlayerId(playerId);
 
-    const socket = new WebSocket(wsUrl);
-    ws.current = socket;
+    // 초기 입장(Join) 처리
+    const initGame = async () => {
+      try {
+        const res = await fetch(`/api/room/${roomIdStr}/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerId, name: nickname }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
 
-    socket.onopen = () => {
-      setConnectionStatus("open");
-      socket.send(
-        JSON.stringify({
-          type: "join_room",
-          roomId,
-          name: nickname,
-        } satisfies ClientToServerMessage)
-      );
+        setRoom(data.room);
+        setQuestions(data.questions);
+        setLoading(false);
+
+        // 폴링 시작 (1초 간격)
+        startPolling(playerId);
+      } catch (err: any) {
+        setErrorBanner(`접속 오류: ${err.message}`);
+        setLoading(false);
+      }
     };
 
-    socket.onmessage = (event) => {
-      const data: ServerToClientMessage = JSON.parse(event.data);
-      handleServerMessage(data, nickname);
-    };
-
-    socket.onclose = () => setConnectionStatus("closed");
-    socket.onerror = () => setConnectionStatus("error");
+    initGame();
 
     return () => {
-      socket.close();
+      if (pollingTimer.current) clearInterval(pollingTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, router]);
+  }, [roomIdStr, router]);
+
+  const startPolling = (playerId: string) => {
+    if (pollingTimer.current) clearInterval(pollingTimer.current);
+    pollingTimer.current = setInterval(() => fetchState(), 1000);
+  };
+
+  const fetchState = async () => {
+    try {
+      const res = await fetch(`/api/room/${roomIdStr}/state`);
+      if (!res.ok) throw new Error("서버 응답 오류");
+      const data = await res.json();
+      if (data.room) setRoom(data.room);
+      if (data.questions) setQuestions(data.questions);
+    } catch (err) {
+      console.error("Polling error:", err);
+      // 폴링 에러 시 배너를 띄울 수도 있지만 너무 잦으면 방해되므로 콘솔에만 기록
+    }
+  };
 
   // Q&A 로그 자동 스크롤
   useEffect(() => {
@@ -83,80 +108,70 @@ export default function GameRoomPage() {
     }
   }, [questions]);
 
-  // ─── 메시지 핸들러 ─────────────────────────
-  const handleServerMessage = (msg: ServerToClientMessage, myName: string) => {
-    switch (msg.type) {
-      case "room_state":
-        setRoom(msg.room);
-        // 닉네임을 사용하여 플레이어 목록에서 나 자신을 찾음
-        // 서버에서 join_room 성공 시 직접 playerId를 제공하지 않으므로 이름을 기준으로 찾습니다.
-        const me = msg.room.players.find((p) => p.name === myName);
-        if (me) setMyPlayerId(me.id);
-        break;
-
-      case "question_posted":
-        setQuestions((prev) => [...prev, msg.question as Question]);
-        break;
-
-      case "answer_posted":
-        setQuestions((prev) =>
-          prev.map((q) =>
-            q.id === msg.questionId ? { ...q, answer: msg.answer } : q
-          )
-        );
-        break;
-
-      case "guess_result":
-        setErrorBanner(
-          msg.correct
-            ? `🎉 ${msg.word ? `[${msg.word}] ` : ""}정답입니다!`
-            : "❌ 땡! 틀렸습니다."
-        );
-        setTimeout(() => setErrorBanner(null), 3000);
-        break;
-
-      case "judge_penalty":
-        const action = msg.action === "mute_30s" ? "30초 간 침묵" : "주의";
-        setErrorBanner(`👨‍⚖️ [심판] ${msg.targetPlayerId}에게 ${action} 조치!`);
-        setTimeout(() => setErrorBanner(null), 3000);
-        break;
-
-      case "game_over":
-        setRoom((prev) => (prev ? { ...prev, status: "finished" } : null));
-        setErrorBanner(`🏆 게임 종료! 승자: ${msg.winnerId || "없음"}`);
-        break;
-
-      case "error":
-        setErrorBanner(`❌ 에러: ${msg.message}`);
-        setTimeout(() => setErrorBanner(null), 5000);
-        break;
-
-      default:
-        // 다른 메시지들은 room_state 업데이트를 통해 반영됩니다.
-        break;
-    }
+  // ─── 액션 메시지 처리 ─────────────────────────
+  const handleServerMessages = (messages: ServerToClientMessage[]) => {
+    messages.forEach((msg) => {
+      switch (msg.type) {
+        case "guess_result":
+          setErrorBanner(
+            msg.correct
+              ? `🎉 ${msg.word ? `[${msg.word}] ` : ""}정답입니다!`
+              : "❌ 땡! 틀렸습니다."
+          );
+          setTimeout(() => setErrorBanner(null), 3000);
+          break;
+        case "judge_penalty":
+          const action = msg.action === "mute_30s" ? "30초 간 침묵" : "주의";
+          setErrorBanner(`👨‍⚖️ [심판] ${msg.targetPlayerId}에게 ${action} 조치!`);
+          setTimeout(() => setErrorBanner(null), 3000);
+          break;
+        case "game_over":
+          setErrorBanner(`🏆 게임 종료! 승자: ${msg.winnerId || "없음"}`);
+          break;
+        case "error":
+          setErrorBanner(`❌ 에러: ${msg.message}`);
+          setTimeout(() => setErrorBanner(null), 5000);
+          break;
+      }
+    });
   };
 
-  // ─── 액션 ─────────────────────────────────
-  const send = (msg: ClientToServerMessage) => {
-    ws.current?.send(JSON.stringify(msg));
+  // ─── 액션 전송 ─────────────────────────────────
+  const performAction = async (action: ClientToServerMessage) => {
+    try {
+      const res = await fetch(`/api/room/${roomIdStr}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: myPlayerId, action }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // 즉시 상태 반영
+      if (data.room) setRoom(data.room);
+      if (data.questions) setQuestions(data.questions);
+      if (data.messages) handleServerMessages(data.messages);
+    } catch (err: any) {
+      setErrorBanner(`작업 실패: ${err.message}`);
+      setTimeout(() => setErrorBanner(null), 3000);
+    }
   };
 
   const handleAsk = () => {
     if (!askToPlayerId || !askText) return;
-    send({ type: "ask_question", toPlayerId: askToPlayerId, text: askText });
+    performAction({ type: "ask_question", toPlayerId: askToPlayerId, text: askText });
     setAskText("");
   };
 
   const handleGuess = () => {
     if (!guessText) return;
-    send({ type: "guess_word", text: guessText });
+    performAction({ type: "guess_word", text: guessText });
     setGuessText("");
   };
 
   const handleJudge = (action: "warn" | "mute_30s") => {
     if (!judgeActionTarget) return;
-    send({
+    performAction({
       type: "judge_action",
       targetPlayerId: judgeActionTarget,
       action,
@@ -164,12 +179,7 @@ export default function GameRoomPage() {
   };
 
   // ─── 렌더링 헬퍼 ──────────────────────────
-  if (connectionStatus === "connecting")
-    return <div style={styles.fullscreenCenter}>접속 중...</div>;
-  if (connectionStatus === "closed")
-    return <div style={styles.fullscreenCenter}>연결이 종료되었습니다.</div>;
-  if (connectionStatus === "error")
-    return <div style={styles.fullscreenCenter}>연결 오류가 발생했습니다.</div>;
+  if (loading) return <div style={styles.fullscreenCenter}>접속 중...</div>;
 
   const currentTurnPlayer = room?.players[room.turnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
@@ -180,7 +190,7 @@ export default function GameRoomPage() {
       {/* 헤더 */}
       <header style={styles.header}>
         <div style={styles.headerTitle}>
-          Room ID: <span style={{ color: "#818cf8" }}>{roomId}</span>
+          Room ID: <span style={{ color: "#818cf8" }}>{roomIdStr}</span>
         </div>
         <div style={styles.headerStats}>
           {room?.topic && (
