@@ -1,21 +1,18 @@
 /**
  * app/api/ws/route.ts
  *
- * WebSocket endpoint using the WebSocketPair pattern.
+ * WebSocketPair 패턴을 사용하는 웹소켓 엔드포인트입니다.
  *
- * ⚠️  ENVIRONMENT NOTE:
- *   `WebSocketPair` is a Web API native to Cloudflare Workers and the
- *   Vercel Edge Runtime. It is NOT available in the standard Node.js runtime.
+ * ⚠️ 환경 참고 사항:
+ *   `WebSocketPair`는 Cloudflare Workers 및 Vercel Edge Runtime의 네이티브 Web API입니다.
+ *   표준 Node.js 런타임에서는 사용할 수 없습니다.
  *
- *   - Vercel deployment → works ONLY with `runtime = "edge"` or on Vercel's
- *     managed infrastructure that polyfills WebSocketPair for Node functions.
- *   - Local `next dev` (Node.js)  → WebSocketPair is undefined at runtime.
+ *   - Vercel 배포 시 → `runtime = "edge"` 설정이나 Node 함수용 WebSocketPair 폴리필이 포함된 인프라에서만 작동합니다.
+ *   - 로컬 `next dev` (Node.js) → 런타임 시 WebSocketPair가 정의되지 않습니다.
  *
- *   If you need local WebSocket support, see the `server.ts` custom-server
- *   approach using the `ws` npm package.
+ *   로컬 웹소켓 지원이 필요한 경우 `ws` 패키지를 사용하는 커스텀 서버 방식을 참고하세요.
  *
- *   The type declarations below (`WebSocketPair`, `ExtendedResponse`) are
- *   hand-written because they are not included in @types/node or the TS DOM lib.
+ *   아래의 타입 선언(`WebSocketPair`, `ExtendedResponse`)은 @types/node나 TS DOM 라이브러리에 포함되어 있지 않아 직접 작성되었습니다.
  */
 
 export const runtime = "edge";
@@ -25,8 +22,8 @@ import * as roomManager from "@/lib/game/roomManager";
 import type { ClientToServerMessage, ServerToClientMessage } from "@/lib/game/types";
 
 // ─────────────────────────────────────────────
-// Manual type declarations for WebSocketPair
-// (not in @types/node – runtime provides them)
+// WebSocketPair를 위한 수동 타입 선언
+// (@types/node에 포함되어 있지 않으며 런타임에서 제공됨)
 // ─────────────────────────────────────────────
 
 interface ServerWebSocket {
@@ -40,17 +37,17 @@ interface ServerWebSocket {
 
 declare const WebSocketPair: new () => { 0: ServerWebSocket; 1: ServerWebSocket };
 
-/** The Vercel/CF Response that accepts a `webSocket` field. */
-type WsResponse = Response & never; // keeps assignability
+/** webSocket 필드를 허용하는 Vercel/CF Response 타입 */
+type WsResponse = Response & never; // 할당 가능성 유지
 
 // ─────────────────────────────────────────────
-// In-process connection registry
+// 프로세스 내 연결 레지스트리
 // ─────────────────────────────────────────────
 
 const WS_REGISTRY = Symbol.for("app.ws.registry");
 
 interface WsRegistry {
-  /** roomId → set of server-side sockets */
+  /** roomId → 서버 측 소켓 세트 */
   roomSockets: Map<string, Set<ServerWebSocket>>;
   /** socket → { roomId, playerId } */
   socketMeta: Map<ServerWebSocket, { roomId: string; playerId: string }>;
@@ -68,14 +65,14 @@ function getRegistry(): WsRegistry {
 }
 
 // ─────────────────────────────────────────────
-// Helpers
+// 헬퍼 함수
 // ─────────────────────────────────────────────
 
 function sendToSocket(socket: ServerWebSocket, msg: ServerToClientMessage): void {
   try {
     socket.send(JSON.stringify(msg));
   } catch {
-    // socket may already be closed
+    // 소켓이 이미 닫혔을 수 있음
   }
 }
 
@@ -98,17 +95,17 @@ function broadcast(roomId: string, messages: ServerToClientMessage[]): void {
       try {
         sock.send(json);
       } catch {
-        // ignore closed sockets
+        // 이미 닫힌 소켓은 무시
       }
     }
   }
 }
 
 // ─────────────────────────────────────────────
-// Per-connection logic
+// 연결별 로직
 // ─────────────────────────────────────────────
 
-/** Called immediately after upgrade; waits for the first join_room message. */
+/** 소켓 업그레이드 직후 호출되며, 첫 번째 join_room 메시지를 기다립니다. */
 function handleSocket(socket: ServerWebSocket, roomId: string): void {
   socket.accept();
 
@@ -116,13 +113,13 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
   let joined = false;
   let playerId = "";
 
-  // Register socket in room
+  // 해당 방에 소켓 등록
   if (!registry.roomSockets.has(roomId)) {
     registry.roomSockets.set(roomId, new Set());
   }
   registry.roomSockets.get(roomId)!.add(socket);
 
-  // ── message handler ──────────────────────────────────
+  // ── 메시지 핸들러 ──────────────────────────────────
   socket.addEventListener("message", (evt) => {
     let msg: ClientToServerMessage;
 
@@ -133,7 +130,7 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
       return;
     }
 
-    // First message must be join_room
+    // 첫 번째 메시지는 반드시 join_room이어야 함
     if (!joined) {
       if (msg.type !== "join_room") {
         sendError(socket, "Send join_room first");
@@ -149,7 +146,7 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
         const { messages } = roomManager.joinRoom(roomId, playerId, msg.name);
         broadcast(roomId, messages);
 
-        // Notify other players about the newcomer
+        // 새로운 플레이어 입장을 다른 사람들에게 알림
         const sockets = registry.roomSockets.get(roomId)!;
         const joinedMsg: ServerToClientMessage = {
           type: "player_joined",
@@ -158,7 +155,11 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
         const json = JSON.stringify(joinedMsg);
         for (const sock of sockets) {
           if (sock !== socket) {
-            try { sock.send(json); } catch { /* closed */ }
+            try {
+              sock.send(json);
+            } catch {
+              /* 닫힘 */
+            }
           }
         }
       } catch (err: unknown) {
@@ -168,7 +169,7 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
       return;
     }
 
-    // Subsequent messages
+    // 이후의 메시지 처리
     try {
       const result = dispatchMessage(roomId, playerId, msg);
       if (result) broadcast(roomId, result.messages);
@@ -177,7 +178,7 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
     }
   });
 
-  // ── close handler ─────────────────────────────────────
+  // ── 종료 핸들러 ─────────────────────────────────────
   socket.addEventListener("close", () => {
     const meta = registry.socketMeta.get(socket);
     registry.socketMeta.delete(socket);
@@ -191,18 +192,18 @@ function handleSocket(socket: ServerWebSocket, roomId: string): void {
       const { messages } = roomManager.leaveRoom(meta.roomId, meta.playerId);
       broadcast(meta.roomId, messages);
     } catch {
-      // room may already be gone
+      // 방이 이미 사라졌을 수 있음
     }
   });
 
-  // ── error handler ─────────────────────────────────────
+  // ── 에러 핸들러 ─────────────────────────────────────
   socket.addEventListener("error", (evt) => {
     console.error("[ws] socket error", evt);
   });
 }
 
 // ─────────────────────────────────────────────
-// Message dispatcher
+// 메시지 디스패처
 // ─────────────────────────────────────────────
 
 function dispatchMessage(
@@ -212,7 +213,7 @@ function dispatchMessage(
 ): { messages: ServerToClientMessage[] } | null {
   switch (msg.type) {
     case "join_room":
-      // Duplicate join — ignore
+      // 중복 입장 — 무시
       return null;
 
     case "set_topic_and_rule":
@@ -242,7 +243,7 @@ function dispatchMessage(
 }
 
 // ─────────────────────────────────────────────
-// Route Handler
+// 라우트 핸들러
 // ─────────────────────────────────────────────
 
 export function GET(req: NextRequest): Response {
@@ -252,7 +253,7 @@ export function GET(req: NextRequest): Response {
     return new Response("Missing roomId query parameter", { status: 400 });
   }
 
-  // Upgrade check
+  // 업그레이드 여부 확인
   const upgradeHeader = req.headers.get("upgrade");
   if (upgradeHeader?.toLowerCase() !== "websocket") {
     return new Response(
@@ -261,17 +262,17 @@ export function GET(req: NextRequest): Response {
     );
   }
 
-  // Create the WebSocket pair
+  // WebSocket Pair 생성
   const pair = new WebSocketPair();
-  const client = pair[0]; // returned to the browser
-  const server = pair[1]; // stays on the server
+  const client = pair[0]; // 브라우저에 반환됨
+  const server = pair[1]; // 서버에 남아 소통을 담당함
 
   handleSocket(server, roomId);
 
-  // 101 Switching Protocols — runtime injects the pair into the response
+  // 101 Switching Protocols — 런타임이 응답에 소켓 쌍을 주입함
   return new Response(null, {
     status: 101,
-    // @ts-expect-error — `webSocket` is a Vercel/CF extension, not in standard Response
+    // @ts-expect-error — `webSocket`은 Vercel/CF 전용 확장이며 표준 Response에는 없음
     webSocket: client,
   }) as WsResponse;
 }

@@ -3,21 +3,21 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-// Utility to generate a unique Room ID
+// 유니크한 방 ID를 생성하는 유틸리티
 function generateRoomId(): string {
   return Math.random().toString(36).substring(2, 9).toUpperCase();
 }
 
 /**
- * Lobby Page (app/page.tsx)
- * Used to enter a nickname and either create or join a room.
+ * 로비 페이지 (app/page.tsx)
+ * 닉네임을 입력하고 방을 생성하거나 기존 방에 참가하는 데 사용됩니다.
  */
 export default function LobbyPage() {
   const router = useRouter();
   const [nickname, setNickname] = useState("");
   const [roomIdInput, setRoomIdInput] = useState("");
 
-  // Load nickname from localStorage on mount
+  // 마운트 시 localStorage에서 닉네임 로드
   useEffect(() => {
     const saved = localStorage.getItem("nickname");
     if (saved) {
@@ -102,7 +102,7 @@ export default function LobbyPage() {
 }
 
 // ─────────────────────────────────────────────
-// Basic Styling
+// 기본 스타일
 // ─────────────────────────────────────────────
 
 const styles: Record<string, React.CSSProperties> = {

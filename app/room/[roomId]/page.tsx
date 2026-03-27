@@ -11,7 +11,7 @@ import {
 } from "@/lib/game/types";
 
 /**
- * Game Room Page (app/room/[roomId]/page.tsx)
+ * 게임 방 페이지 (app/room/[roomId]/page.tsx)
  */
 export default function GameRoomPage() {
   const router = useRouter();
@@ -19,7 +19,7 @@ export default function GameRoomPage() {
   // roomId가 string | string[] 일 수 있으니 방어하려면:
   const roomIdStr = Array.isArray(roomId) ? roomId[0] : roomId;
 
-  // ─── States ──────────────────────────────────
+  // ─── 상태 관리 ──────────────────────────────────
   const [room, setRoom] = useState<RoomState | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export default function GameRoomPage() {
   const ws = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // ─── WebSocket Effect ────────────────────────
+  // ─── 웹소켓 이펙트 ────────────────────────
   useEffect(() => {
     const nickname = localStorage.getItem("nickname");
     if (!nickname) {
@@ -76,20 +76,20 @@ export default function GameRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, router]);
 
-  // Auto-scroll Q&A log
+  // Q&A 로그 자동 스크롤
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [questions]);
 
-  // ─── Message Handler ─────────────────────────
+  // ─── 메시지 핸들러 ─────────────────────────
   const handleServerMessage = (msg: ServerToClientMessage, myName: string) => {
     switch (msg.type) {
       case "room_state":
         setRoom(msg.room);
-        // Best effort: find ourselves in the player list using the nickname
-        // Since the server doesn't provide playerId directly on join_room success yet
+        // 닉네임을 사용하여 플레이어 목록에서 나 자신을 찾음
+        // 서버에서 join_room 성공 시 직접 playerId를 제공하지 않으므로 이름을 기준으로 찾습니다.
         const me = msg.room.players.find((p) => p.name === myName);
         if (me) setMyPlayerId(me.id);
         break;
@@ -132,12 +132,12 @@ export default function GameRoomPage() {
         break;
 
       default:
-        // Other messages reflect in room_state updates
+        // 다른 메시지들은 room_state 업데이트를 통해 반영됩니다.
         break;
     }
   };
 
-  // ─── Actions ─────────────────────────────────
+  // ─── 액션 ─────────────────────────────────
   const send = (msg: ClientToServerMessage) => {
     ws.current?.send(JSON.stringify(msg));
   };
@@ -163,7 +163,7 @@ export default function GameRoomPage() {
     });
   };
 
-  // ─── Render Helpers ──────────────────────────
+  // ─── 렌더링 헬퍼 ──────────────────────────
   if (connectionStatus === "connecting")
     return <div style={styles.fullscreenCenter}>접속 중...</div>;
   if (connectionStatus === "closed")
@@ -177,7 +177,7 @@ export default function GameRoomPage() {
 
   return (
     <div style={styles.wrapper}>
-      {/* Header */}
+      {/* 헤더 */}
       <header style={styles.header}>
         <div style={styles.headerTitle}>
           Room ID: <span style={{ color: "#818cf8" }}>{roomId}</span>
@@ -193,9 +193,9 @@ export default function GameRoomPage() {
         </div>
       </header>
 
-      {/* Main Body */}
+      {/* 메인 바디 */}
       <div style={styles.body}>
-        {/* Sidebar: Players */}
+        {/* 사이드바: 플레이어 */}
         <aside style={styles.sidebar}>
           <h3 style={styles.sidebarHeader}>플레이어 ({room?.players.length})</h3>
           <div style={styles.playerList}>
@@ -221,11 +221,11 @@ export default function GameRoomPage() {
           </div>
         </aside>
 
-        {/* Content Section */}
+        {/* 콘텐츠 섹션 */}
         <section style={styles.content}>
           {errorBanner && <div style={styles.errorBanner}>{errorBanner}</div>}
 
-          {/* Q&A Log */}
+          {/* Q&A 로그 */}
           <div style={styles.logContainer} ref={scrollRef}>
             {questions.length === 0 && (
               <div style={styles.emptyLog}>질문을 시작해보세요!</div>
@@ -249,7 +249,7 @@ export default function GameRoomPage() {
             ))}
           </div>
 
-          {/* User Controls */}
+          {/* 사용자 컨트롤 */}
           <div style={styles.controls}>
             {room?.status === "playing" && !iAmJudge && (
               <>
@@ -302,7 +302,7 @@ export default function GameRoomPage() {
               </>
             )}
 
-            {/* Judge Controls */}
+            {/* 심판 컨트롤 */}
             {iAmJudge && room?.status === "playing" && (
               <div style={styles.judgeControls}>
                 <div style={{ fontWeight: 600, marginBottom: "8px" }}>⚖️ 심판 도구</div>
@@ -352,7 +352,7 @@ export default function GameRoomPage() {
 }
 
 // ─────────────────────────────────────────────
-// Styles
+// 스타일
 // ─────────────────────────────────────────────
 
 const styles: Record<string, React.CSSProperties> = {

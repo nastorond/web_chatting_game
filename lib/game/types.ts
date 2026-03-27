@@ -1,14 +1,14 @@
 // ─────────────────────────────────────────────
-// Domain entities
+// 도메인 엔티티
 // ─────────────────────────────────────────────
 
 export interface Player {
   id: string;
   name: string;
   isJudge: boolean;
-  isAlive: boolean;   // false once the player has correctly guessed their word
-  word?: string;      // server-only: the word assigned to this player
-  penaltyUntil?: number; // mute ends at this unix-ms timestamp
+  isAlive: boolean;   // 플레이어가 자신의 단어를 올바르게 맞추면 false가 됨
+  word?: string;      // 서버 전용: 각 플레이어에게 할당된 단어
+  penaltyUntil?: number; // 침묵(Mute)이 종료되는 Unix MS 타임스탬프
 }
 
 export type EndCondition = "firstWin" | "lastLose";
@@ -20,13 +20,13 @@ export interface RoomState {
   topic: string | null;
   endCondition: EndCondition | null;
   round: number;
-  turnIndex: number;  // index into players[] of whoever's turn it is
+  turnIndex: number;  // 현재 발언 차례인 플레이어의 index (players[] 내 인덱스)
   status: "waiting" | "playing" | "finished";
-  createdAt: number;  // unix-ms
+  createdAt: number;  // 생성 시점 (Unix MS)
 }
 
 // ─────────────────────────────────────────────
-// Questions stored in memory during a round
+// 라운드 중에 메모리에 저장되는 질문들
 // ─────────────────────────────────────────────
 
 export interface Question {
@@ -39,7 +39,7 @@ export interface Question {
 }
 
 // ─────────────────────────────────────────────
-// Client → Server messages
+// 클라이언트 → 서버 메시지
 // ─────────────────────────────────────────────
 
 export type ClientToServerMessage =
@@ -52,13 +52,13 @@ export type ClientToServerMessage =
   | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" };
 
 // ─────────────────────────────────────────────
-// Server → Client messages
+// 서버 → 클라이언트 메시지
 // ─────────────────────────────────────────────
 
 /**
- * Full room state snapshot – sent on join and after any state change.
- * The `word` field is stripped for each player before sending to the client
- * (the server decides who can see what).
+ * 전체 방 상태 스냅샷 - 입장 시 또는 상태 변경 후에 전송됩니다.
+ * 각 플레이어에게 보내기 전 'word' 필드는 제거됩니다 
+ * (서버가 각 플레이어에게 무엇을 보여줄지 결정합니다).
  */
 export type ServerToClientMessage =
   | { type: "room_state"; room: RoomState }
@@ -78,10 +78,10 @@ export type ServerToClientMessage =
     penaltyUntil?: number;
   }
   /**
-   * Emitted when the game ends.
-   * - `firstWin` → winnerId is the player who correctly guessed their word first.
-   * - `lastLose` → winnerId is the **last surviving player** (i.e. the actual loser).
-   *   The field is reused for symmetry; treat it as "loserId" in this mode.
+   * 게임이 종료되었을 때 발생합니다.
+   * - `firstWin` → winnerId는 자신의 단어를 가장 먼저 맞춘 플레이어입니다.
+   * - `lastLose` → winnerId는 **마지막까지 남은 플레이어**(즉, 실제 패배자)입니다.
+   *   필드는 대칭성을 위해 재사용됩니다. 이 모드에서는 "loserId"로 간주하십시오.
    */
   | { type: "game_over"; winnerId?: string }
   | { type: "error"; message: string };

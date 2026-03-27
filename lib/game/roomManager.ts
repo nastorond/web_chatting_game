@@ -7,19 +7,19 @@ import {
 } from "./types";
 
 // ─────────────────────────────────────────────
-// In-memory store
+// 인메모리 저장소
 // ─────────────────────────────────────────────
 
 const rooms = new Map<string, RoomState>();
 
 /**
- * Per-room questions live separately so RoomState stays clean.
+ * 각 방의 질문들은 RoomState를 깔끔하게 유지하기 위해 별도로 관리됩니다.
  * questionsByRoom[roomId][questionId] = Question
  */
 const questionsByRoom = new Map<string, Map<string, Question>>();
 
 // ─────────────────────────────────────────────
-// Helpers
+// 헬퍼 함수
 // ─────────────────────────────────────────────
 
 function getRoom(roomId: string): RoomState {
@@ -34,7 +34,7 @@ function getPlayer(room: RoomState, playerId: string): Player {
   return player;
 }
 
-/** Return a safe copy of the room – strips `word` from all players. */
+/** 방의 안전한 복사본을 반환합니다. 모든 플레이어로부터 `word` 필드를 제거합니다. */
 function publicRoom(room: RoomState): RoomState {
   return {
     ...room,
@@ -46,7 +46,7 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
-/** Check finish conditions and return a game_over message if the game is done. */
+/** 게임 종료 조건을 확인하고, 게임이 끝났다면 game_over 메시지를 반환합니다. */
 function checkGameOver(room: RoomState): ServerToClientMessage | null {
   if (!room.endCondition) return null;
 
@@ -68,11 +68,11 @@ function checkGameOver(room: RoomState): ServerToClientMessage | null {
 }
 
 // ─────────────────────────────────────────────
-// Room lifecycle
+// 방 생명주기
 // ─────────────────────────────────────────────
 
 /**
- * Create a new room and register it.
+ * 새로운 방을 생성하고 등록합니다.
  */
 export function createRoom(roomId: string, hostId: string): RoomState {
   const room: RoomState = {
@@ -92,8 +92,8 @@ export function createRoom(roomId: string, hostId: string): RoomState {
 }
 
 /**
- * Add a player to an existing room (or create if missing).
- * Returns: updated RoomState + messages to broadcast.
+ * 기존 방에 플레이어를 추가합니다 (방이 없으면 생성합니다).
+ * 반환값: 업데이트된 RoomState + 방송할 메시지 목록.
  */
 export function joinRoom(
   roomId: string,
@@ -102,7 +102,7 @@ export function joinRoom(
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   let room = rooms.get(roomId) ?? createRoom(roomId, playerId);
 
-  // Don't add duplicates (reconnect case)
+  // 중복 추가 방지 (재연결 케이스)
   if (!room.players.find((p) => p.id === playerId)) {
     const newPlayer: Player = {
       id: playerId,
@@ -122,8 +122,8 @@ export function joinRoom(
 }
 
 /**
- * Remove a player from a room.
- * Returns updated RoomState + messages, or null if the room was deleted.
+ * 방에서 플레이어를 제거합니다.
+ * 반환값: 업데이트된 RoomState + 메시지 목록, 또는 방이 삭제된 경우 null.
  */
 export function leaveRoom(
   roomId: string,
@@ -135,7 +135,7 @@ export function leaveRoom(
   const updated: RoomState = {
     ...room,
     players: room.players.filter((p) => p.id !== playerId),
-    // If host left, promote the next player
+    // 방장이 나간 경우 다음 플레이어를 방장으로 승격
     hostId: room.hostId === playerId
       ? (room.players.find((p) => p.id !== playerId)?.id ?? room.hostId)
       : room.hostId,
@@ -156,11 +156,11 @@ export function leaveRoom(
 }
 
 // ─────────────────────────────────────────────
-// Game setup
+// 게임 설정
 // ─────────────────────────────────────────────
 
 /**
- * Host sets the topic and end condition.
+ * 방장이 주제와 종료 조건을 설정합니다.
  */
 export function setTopicAndRule(
   roomId: string,
@@ -179,9 +179,9 @@ export function setTopicAndRule(
 }
 
 /**
- * Player i submits a word for the player on their left: (i+1) % n.
- * The caller (route.ts) should verify that `fromPlayerId` is actually
- * allowed to write for `forPlayerId` before calling this.
+ * 플레이어 i가 왼쪽 플레이어((i+1) % n)를 위한 단어를 제출합니다.
+ * 호출자(route.ts)는 이 함수를 호출하기 전에 `fromPlayerId`가 
+ * `forPlayerId`에게 단어를 부여할 권한이 있는지 확인해야 합니다.
  */
 export function submitWord(
   roomId: string,
@@ -193,7 +193,7 @@ export function submitWord(
   const targetIdx = room.players.findIndex((p) => p.id === forPlayerId);
   if (targetIdx === -1) throw new Error(`Target player not found: ${forPlayerId}`);
 
-  // Verify circular seating rule: fromPlayer must be the right neighbour of forPlayer.
+  // 원형 좌석 규칙 확인: fromPlayer는 forPlayer의 오른쪽 이웃이어야 합니다.
   const fromIdx = room.players.findIndex((p) => p.id === fromPlayerId);
   const expectedFromIdx = (targetIdx - 1 + room.players.length) % room.players.length;
   if (fromIdx !== expectedFromIdx) {
@@ -212,7 +212,7 @@ export function submitWord(
 
   const messages: ServerToClientMessage[] = [];
   if (allAssigned) {
-    // Transition to playing
+    // 게임 시작 상태로 전환
     const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: 0 };
     rooms.set(roomId, playing);
     messages.push({ type: "words_assigned" });
@@ -232,12 +232,12 @@ export function submitWord(
 }
 
 // ─────────────────────────────────────────────
-// Turn management
+// 턴 관리
 // ─────────────────────────────────────────────
 
 /**
- * Advance to the next player's turn.
- * Wraps around and increments round when all players have gone.
+ * 다음 플레이어의 턴으로 진행합니다.
+ * 모든 플레이어가 턴을 마치면 라운드를 올리고 다시 처음부터 시작합니다.
  */
 export function handleTurnEnd(
   roomId: string
@@ -274,11 +274,11 @@ export function handleTurnEnd(
 }
 
 // ─────────────────────────────────────────────
-// In-game actions
+// 게임 내 액션
 // ─────────────────────────────────────────────
 
 /**
- * A player asks another player a question about their own word.
+ * 플레이어가 자신의 단어를 유추하기 위해 다른 플레이어에게 질문을 던집니다.
  */
 export function handleAskQuestion(
   roomId: string,
@@ -289,7 +289,7 @@ export function handleAskQuestion(
   const room = getRoom(roomId);
   const questions = questionsByRoom.get(roomId)!;
 
-  // Check mute
+  // 침묵 여부 확인
   const from = getPlayer(room, fromPlayerId);
   if (from.penaltyUntil && from.penaltyUntil > Date.now()) {
     throw new Error("You are muted.");
@@ -315,7 +315,7 @@ export function handleAskQuestion(
 }
 
 /**
- * A player answers a previously posted question.
+ * 플레이어가 이전에 게시된 질문에 답변합니다.
  */
 export function handleAnswerQuestion(
   roomId: string,
@@ -330,7 +330,7 @@ export function handleAnswerQuestion(
   if (question.toPlayerId !== fromPlayerId)
     throw new Error("Only the addressed player may answer.");
 
-  // Check mute
+  // 침묵 여부 확인
   const from = getPlayer(room, fromPlayerId);
   if (from.penaltyUntil && from.penaltyUntil > Date.now()) {
     throw new Error("You are muted.");
@@ -346,8 +346,8 @@ export function handleAnswerQuestion(
 }
 
 /**
- * A player guesses their own word.
- * Returns an optional game_over message if the end condition is met.
+ * 플레이어가 자신의 단어를 추측합니다.
+ * 종료 조건이 충족되면 선택적으로 game_over 메시지를 반환합니다.
  */
 export function handleGuessWord(
   roomId: string,
@@ -364,7 +364,7 @@ export function handleGuessWord(
   const messages: ServerToClientMessage[] = [];
 
   if (correct) {
-    // Mark player as no longer alive (they've won their own word)
+    // 플레이어를 '생존하지 않음(탈출)' 상태로 표시 (본인의 단어를 맞춤)
     const newPlayers = room.players.map((p) =>
       p.id === playerId ? { ...p, isAlive: false } : p
     );
@@ -386,7 +386,7 @@ export function handleGuessWord(
 }
 
 /**
- * The judge warns or mutes a player.
+ * 심판이 플레이어에게 경고를 주거나 침묵(Mute) 조치를 취합니다.
  */
 export function handleJudgeAction(
   roomId: string,
@@ -406,7 +406,7 @@ export function handleJudgeAction(
       penaltyUntil = Date.now() + 30_000;
       return { ...p, penaltyUntil };
     }
-    return p; // warn is informational only
+    return p; // 경고는 정보 제공용일 뿐 상태 변화 없음
   });
 
   room = { ...room, players: newPlayers };
@@ -420,7 +420,7 @@ export function handleJudgeAction(
 }
 
 // ─────────────────────────────────────────────
-// Read helpers (for route.ts)
+// 조회 헬퍼 함수 (route.ts용)
 // ─────────────────────────────────────────────
 
 export function getRooms(): Map<string, RoomState> {
@@ -431,7 +431,7 @@ export function getPublicRoom(roomId: string): RoomState {
   return publicRoom(getRoom(roomId));
 }
 
-/** Returns the word assigned to a specific player (server-only). */
+/** 특정 플레이어에게 할당된 단어를 반환합니다 (서버 전용). */
 export function getPlayerWord(roomId: string, playerId: string): string | undefined {
   return getRoom(roomId).players.find((p) => p.id === playerId)?.word;
 }
