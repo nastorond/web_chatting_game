@@ -6,14 +6,9 @@ import {
   RoomState,
   ServerToClientMessage,
   ClientToServerMessage,
-  Question,
-  EndCondition,
+  ChatMessage,
 } from "@/lib/game/types";
 
-/**
- * 게임 방 페이지 (app/room/[roomId]/page.tsx)
- * 고도화된 게임 흐름 및 상태별 UI 반영 버전
- */
 export default function GameRoomPage() {
   const router = useRouter();
   const { roomId } = useParams<{ roomId: string }>();
@@ -21,7 +16,7 @@ export default function GameRoomPage() {
 
   // ─── 상태 관리 ──────────────────────────────────
   const [room, setRoom] = useState<RoomState | null>(null);
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingAction, setLoadingAction] = useState(false);
@@ -30,10 +25,8 @@ export default function GameRoomPage() {
   // 입력 필드들
   const [topicInput, setTopicInput] = useState("");
   const [wordInput, setWordInput] = useState("");
-  const [askToPlayerId, setAskToPlayerId] = useState("");
-  const [askText, setAskText] = useState("");
+  const [chatInput, setChatInput] = useState("");
   const [guessText, setGuessText] = useState("");
-  const [answerInputs, setAnswerInputs] = useState<Record<string, string>>({});
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -65,7 +58,7 @@ export default function GameRoomPage() {
         if (data.error) throw new Error(data.error);
 
         setRoom(data.room);
-        setQuestions(data.questions);
+        setChatMessages(data.chatMessages || []);
         setLoading(false);
         startPolling();
       } catch (err: any) {
@@ -93,7 +86,7 @@ export default function GameRoomPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.room) setRoom(data.room);
-      if (data.questions) setQuestions(data.questions);
+      if (data.chatMessages) setChatMessages(data.chatMessages);
     } catch (err) {
       console.error("Polling error:", err);
     }
@@ -104,7 +97,7 @@ export default function GameRoomPage() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [questions]);
+  }, [chatMessages]);
 
   // ─── 액션 전송 ─────────────────────────────────
   const performAction = async (action: ClientToServerMessage) => {
@@ -120,18 +113,13 @@ export default function GameRoomPage() {
       if (data.error) throw new Error(data.error);
 
       if (data.room) setRoom(data.room);
-      if (data.questions) setQuestions(data.questions);
+      if (data.chatMessages) setChatMessages(data.chatMessages);
       
-      // 서버 메시지 처리 (예: guess_result, game_over 등)
       if (data.messages) {
         data.messages.forEach((msg: ServerToClientMessage) => {
           if (msg.type === "guess_result") {
             setErrorBanner(msg.correct ? "🎉 정답입니다!" : "❌ 틀렸습니다.");
             setTimeout(() => setErrorBanner(null), 3000);
-          } else if (msg.type === "game_over") {
-            setErrorBanner(`🏆 축하합니다! 승자: ${msg.winnerId}`);
-          } else if (msg.type === "error") {
-            setErrorBanner(`에러: ${msg.message}`);
           }
         });
       }
@@ -160,17 +148,11 @@ export default function GameRoomPage() {
     setWordInput("");
   };
 
-  const handleAsk = () => {
-    if (!askToPlayerId || !askText) return;
-    performAction({ type: "ask_question", toPlayerId: askToPlayerId, text: askText });
-    setAskText("");
-  };
-
-  const handleAnswer = (questionId: string) => {
-    const text = answerInputs[questionId];
-    if (!text) return;
-    performAction({ type: "answer_question", questionId, text });
-    setAnswerInputs(prev => ({ ...prev, [questionId]: "" }));
+  const handleSendChat = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!chatInput.trim()) return;
+    performAction({ type: "chat", text: chatInput });
+    setChatInput("");
   };
 
   const handleGuess = () => {
@@ -179,7 +161,6 @@ export default function GameRoomPage() {
     setGuessText("");
   };
 
-  // ─── 렌더링 도우미 ──────────────────────────
   if (loading) return <div style={styles.fullscreenCenter}>접속 중...</div>;
 
   const me = room?.players.find((p) => p.id === myPlayerId);
@@ -187,7 +168,6 @@ export default function GameRoomPage() {
   const currentTurnPlayer = room?.players[room.turnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
 
-  // 원형 좌석 기반 대상자 찾기 (i + 1) % n
   const myIndex = room ? room.players.findIndex(p => p.id === myPlayerId) : -1;
   const targetForWordAssign = room && myIndex !== -1 
     ? room.players[(myIndex + 1) % room.players.length] 
@@ -203,12 +183,23 @@ export default function GameRoomPage() {
     }
   };
 
+  const getChatStyle = (kind: string) => {
+    switch (kind) {
+      case "system": return styles.chatSystem;
+      case "guess": return styles.chatGuess;
+      default: return styles.chatNormal;
+    }
+  };
+
   // ─── 메인 뷰 ──────────────────────────────
   return (
     <div style={styles.wrapper}>
       {/* 1. 상단 헤더 */}
       <header style={styles.header}>
-        <div style={styles.headerTitle}>Room ID: {roomIdStr}</div>
+        <div style={styles.headerTitle}>
+          Room ID: {roomIdStr} 
+          {room?.topic && <span style={styles.topicTag}>주제: {room.topic}</span>}
+        </div>
         <div style={styles.headerStats}>
           <span style={styles.badge}>상태: {getStatusLabel(room?.status)}</span>
           <span style={{ ...styles.badge, backgroundColor: iAmJudge ? "#ef4444" : "#10b981" }}>
@@ -299,114 +290,74 @@ export default function GameRoomPage() {
             </div>
           )}
 
-          {/* (3) status === "playing" */}
-          {room?.status === "playing" && (
+          {/* (3) status === "playing" | "finished" */}
+          {(room?.status === "playing" || room?.status === "finished") && (
             <div style={styles.gameArea}>
-              <div style={styles.turnInfo}>
-                <span style={{ fontWeight: 700, color: "#818cf8" }}>라운드 {room.round}</span>
-                <span style={{ margin: "0 10px" }}>|</span>
-                <span>현재 턴: <strong>{currentTurnPlayer?.name}</strong></span>
-                {isMyTurn && <span style={styles.myTurnBadge}>당신의 차례입니다!</span>}
-              </div>
+              {room?.status === "playing" && (
+                <div style={styles.turnInfo}>
+                  <span style={{ fontWeight: 700, color: "#818cf8" }}>라운드 {room.round}</span>
+                  <span style={{ margin: "0 10px" }}>|</span>
+                  <span>현재 차례: <strong>{currentTurnPlayer?.name}</strong></span>
+                  {isMyTurn && <span style={styles.myTurnBadge}>당신의 차례입니다!</span>}
+                </div>
+              )}
 
-              {/* Q&A 로그 */}
+              {/* 채팅 로그 */}
               <div style={styles.logContainer} ref={scrollRef}>
-                {questions.map((q) => (
-                  <div key={q.id} style={styles.logItem}>
-                    <div style={styles.logHeader}>
-                      {room.players.find(p => p.id === q.fromPlayerId)?.name} → {room.players.find(p => p.id === q.toPlayerId)?.name}
-                    </div>
-                    <div style={styles.logText}>❓ {q.text}</div>
-                    {q.answer ? (
-                      <div style={styles.logAnswer}>💬 {q.answer}</div>
-                    ) : (
-                      q.toPlayerId === myPlayerId && (
-                        <div style={styles.answerArea}>
-                          <input
-                            style={styles.smallInput}
-                            placeholder="답변하기..."
-                            value={answerInputs[q.id] || ""}
-                            onChange={(e) => setAnswerInputs(prev => ({ ...prev, [q.id]: e.target.value }))}
-                          />
-                          <button style={styles.smallButton} onClick={() => handleAnswer(q.id)} disabled={loadingAction}>
-                            답변
-                          </button>
-                        </div>
-                      )
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} style={{ ...styles.chatRow, ...getChatStyle(msg.kind) }}>
+                    {msg.kind === "chat" && (
+                      <span style={styles.chatAuthor}>
+                        {room.players.find(p => p.id === msg.playerId)?.name || "Unknown"}:
+                      </span>
                     )}
+                    <span style={styles.chatText}>{msg.text}</span>
                   </div>
                 ))}
+                {room?.status === "finished" && (
+                  <div style={styles.finishAnnouncement}>
+                    <h2>🏁 게임 종료</h2>
+                    {room.winnerPlayerId && (
+                      <p>최종 승자: <strong>{room.players.find(p => p.id === room.winnerPlayerId)?.name}</strong></p>
+                    )}
+                    <button style={{ ...styles.button, width: "auto", marginTop: "20px" }} onClick={() => router.push("/")}>
+                      로비로 이동
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* 플레이어 조작 영역 */}
-              {!iAmJudge && (
+              {room?.status === "playing" && (
                 <div style={styles.actionPanel}>
-                  <h3>액션</h3>
-                  <div style={styles.actionRow}>
-                    <select
-                      style={styles.select}
-                      value={askToPlayerId}
-                      onChange={(e) => setAskToPlayerId(e.target.value)}
-                      disabled={!isMyTurn || loadingAction}
-                    >
-                      <option value="">질문 대상 선택</option>
-                      {room.players.filter(p => p.id !== myPlayerId && !p.isJudge).map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
+                  <form onSubmit={handleSendChat} style={styles.actionRow}>
                     <input
                       style={{ ...styles.input, flex: 1, marginBottom: 0 }}
-                      placeholder="질문 내용을 입력하세요"
-                      value={askText}
-                      onChange={(e) => setAskText(e.target.value)}
-                      disabled={!isMyTurn || loadingAction}
+                      placeholder="메시지를 입력하세요 (자유롭게 질문/답변)"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      disabled={loadingAction}
                     />
-                    <button style={styles.button} onClick={handleAsk} disabled={!isMyTurn || loadingAction}>
-                      질문 전송
+                    <button type="submit" style={{ ...styles.button, width: "80px" }} disabled={loadingAction || !chatInput.trim()}>
+                      전송
                     </button>
-                  </div>
-                  <div style={styles.actionRow}>
-                    <input
-                      style={{ ...styles.input, flex: 1, marginBottom: 0 }}
-                      placeholder="내 단어를 맞춰보세요 (정답 추측)"
-                      value={guessText}
-                      onChange={(e) => setGuessText(e.target.value)}
-                      disabled={!isMyTurn || loadingAction}
-                    />
-                    <button style={{ ...styles.button, backgroundColor: "#059669" }} onClick={handleGuess} disabled={!isMyTurn || loadingAction}>
-                      정답 시도
-                    </button>
-                  </div>
+                  </form>
+                  {!iAmJudge && (
+                    <div style={{ ...styles.actionRow, marginTop: "12px" }}>
+                      <input
+                        style={{ ...styles.input, flex: 1, marginBottom: 0 }}
+                        placeholder="정답 추측 (내 단어 맞추기)"
+                        value={guessText}
+                        onChange={(e) => setGuessText(e.target.value)}
+                        disabled={loadingAction}
+                      />
+                      <button style={{ ...styles.button, width: "120px", backgroundColor: "#059669" }} onClick={handleGuess} disabled={loadingAction || !guessText}>
+                        정답 시도
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-
-              {/* 심판 조작 영역 (필요 시 유지) */}
-              {iAmJudge && (
-                <div style={styles.actionPanel}>
-                  <h3>심판 모니터링</h3>
-                  <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>플레이어들의 발언을 지켜보고 있습니다.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* (4) status === "finished" */}
-          {room?.status === "finished" && (
-            <div style={styles.centerBox}>
-              <div style={styles.setupCard}>
-                <h1 style={{ fontSize: "3rem", marginBottom: "20px" }}>🏁</h1>
-                <h2>게임이 종료되었습니다!</h2>
-                {room.winnerPlayerId ? (
-                  <p style={{ fontSize: "1.5rem", marginTop: "10px" }}>
-                    승자: <span style={{ color: "#fbbf24", fontWeight: 700 }}>{room.players.find(p => p.id === room.winnerPlayerId)?.name}</span>
-                  </p>
-                ) : (
-                  <p>모든 플레이어들이 도착했습니다.</p>
-                )}
-                <button style={{ ...styles.button, marginTop: "24px" }} onClick={() => router.push("/")}>
-                  로비로 돌아가기
-                </button>
-              </div>
             </div>
           )}
         </section>
@@ -415,168 +366,40 @@ export default function GameRoomPage() {
   );
 }
 
-// ─── 디자인 스타일 ──────────────────────────
 const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    height: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    backgroundColor: "#0f172a",
-    color: "#f1f5f9",
-  },
-  fullscreenCenter: {
-    height: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "1.2rem",
-    backgroundColor: "#0f172a",
-    color: "#f1f5f9",
-  },
-  header: {
-    padding: "16px 24px",
-    backgroundColor: "#1e293b",
-    borderBottom: "1px solid #334155",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  headerTitle: { fontSize: "1.2rem", fontWeight: 700 },
+  wrapper: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#0f172a", color: "#f1f5f9" },
+  fullscreenCenter: { height: "100vh", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", fontSize: "1.2rem", backgroundColor: "#0f172a", color: "#f1f5f9" },
+  header: { padding: "16px 24px", backgroundColor: "#1e293b", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  headerTitle: { fontSize: "1.2rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "12px" },
+  topicTag: { fontSize: "0.9rem", color: "#fbbf24", backgroundColor: "rgba(251, 191, 36, 0.1)", padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(251, 191, 36, 0.3)" },
   headerStats: { display: "flex", gap: "10px" },
-  badge: {
-    padding: "4px 12px",
-    backgroundColor: "#334155",
-    borderRadius: "20px",
-    fontSize: "0.85rem",
-    fontWeight: 600,
-  },
+  badge: { padding: "4px 12px", backgroundColor: "#334155", borderRadius: "20px", fontSize: "0.85rem", fontWeight: 600 },
   main: { flex: 1, display: "flex", overflow: "hidden" },
-  sidebar: {
-    width: "280px",
-    backgroundColor: "#111827",
-    padding: "20px",
-    borderRight: "1px solid #334155",
-    display: "flex",
-    flexDirection: "column",
-  },
+  sidebar: { width: "280px", backgroundColor: "#111827", padding: "20px", borderRight: "1px solid #334155", display: "flex", flexDirection: "column" },
   sidebarHeader: { fontSize: "0.9rem", color: "#94a3b8", marginBottom: "16px", textTransform: "uppercase" },
   playerList: { flex: 1, overflowY: "auto" },
-  playerCard: {
-    padding: "12px",
-    backgroundColor: "#1e293b",
-    borderRadius: "8px",
-    marginBottom: "8px",
-    border: "2px solid #334155",
-  },
+  playerCard: { padding: "12px", backgroundColor: "#1e293b", borderRadius: "8px", marginBottom: "8px", border: "2px solid #334155" },
   playerName: { fontWeight: 600, fontSize: "0.95rem" },
   content: { flex: 1, display: "flex", flexDirection: "column", position: "relative" },
-  errorBanner: {
-    position: "absolute",
-    top: "16px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    padding: "10px 24px",
-    backgroundColor: "#ef4444",
-    color: "white",
-    borderRadius: "8px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-    zIndex: 100,
-    fontWeight: 600,
-  },
-  centerBox: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "40px",
-  },
-  setupCard: {
-    maxWidth: "400px",
-    width: "100%",
-    padding: "32px",
-    backgroundColor: "#1e293b",
-    borderRadius: "16px",
-    border: "1px solid #4f46e5",
-    textAlign: "center",
-  },
+  errorBanner: { position: "absolute", top: "16px", left: "50%", transform: "translateX(-50%)", padding: "10px 24px", backgroundColor: "#ef4444", color: "white", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 100, fontWeight: 600 },
+  centerBox: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" },
+  setupCard: { maxWidth: "400px", width: "100%", padding: "32px", backgroundColor: "#1e293b", borderRadius: "16px", border: "1px solid #4f46e5", textAlign: "center" },
   infoText: { fontSize: "1.1rem", color: "#94a3b8", textAlign: "center" },
   successText: { color: "#10b981", marginTop: "16px", fontSize: "0.9rem", fontWeight: 600 },
   gameArea: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
-  turnInfo: {
-    padding: "12px 24px",
-    backgroundColor: "#1e293b",
-    borderBottom: "1px solid #334155",
-    display: "flex",
-    alignItems: "center",
-  },
-  myTurnBadge: {
-    marginLeft: "20px",
-    padding: "2px 10px",
-    backgroundColor: "#4f46e5",
-    borderRadius: "4px",
-    fontSize: "0.75rem",
-    fontWeight: 700,
-  },
-  logContainer: { flex: 1, padding: "24px", overflowY: "auto" },
-  logItem: {
-    marginBottom: "16px",
-    backgroundColor: "#1e293b",
-    padding: "16px",
-    borderRadius: "12px",
-    border: "1px solid #334155",
-  },
-  logHeader: { fontSize: "0.75rem", color: "#94a3b8", marginBottom: "8px" },
-  logText: { fontSize: "1rem", fontWeight: 600 },
-  logAnswer: { marginTop: "8px", paddingLeft: "12px", borderLeft: "3px solid #10b981", color: "#10b981", fontWeight: 500 },
-  answerArea: { marginTop: "12px", display: "flex", gap: "8px" },
-  actionPanel: {
-    padding: "24px",
-    backgroundColor: "#1e293b",
-    borderTop: "1px solid #334155",
-  },
-  actionRow: { display: "flex", gap: "10px", marginBottom: "12px" },
-  input: {
-    width: "100%",
-    padding: "12px",
-    backgroundColor: "#334155",
-    border: "1px solid #475569",
-    borderRadius: "8px",
-    color: "#f1f5f9",
-    marginBottom: "16px",
-    fontSize: "1rem",
-  },
-  smallInput: {
-    flex: 1,
-    padding: "8px 12px",
-    backgroundColor: "#0f172a",
-    border: "1px solid #475569",
-    borderRadius: "6px",
-    color: "#f1f5f9",
-  },
-  select: {
-    padding: "8px 12px",
-    backgroundColor: "#334155",
-    border: "1px solid #475569",
-    borderRadius: "8px",
-    color: "#f1f5f9",
-  },
-  button: {
-    width: "100%",
-    padding: "12px",
-    backgroundColor: "#6366f1",
-    color: "white",
-    fontWeight: 700,
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-  },
-  smallButton: {
-    padding: "8px 16px",
-    backgroundColor: "#10b981",
-    color: "white",
-    fontWeight: 700,
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-  },
+  turnInfo: { padding: "12px 24px", backgroundColor: "#1e293b", borderBottom: "1px solid #334155", display: "flex", alignItems: "center" },
+  myTurnBadge: { marginLeft: "20px", padding: "2px 10px", backgroundColor: "#4f46e5", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 700 },
+  logContainer: { flex: 1, padding: "24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" },
+  chatRow: { padding: "6px 12px", borderRadius: "6px", maxWidth: "80%" },
+  chatNormal: { backgroundColor: "transparent" },
+  chatSystem: { backgroundColor: "rgba(148, 163, 184, 0.1)", color: "#94a3b8", fontSize: "0.85rem", alignSelf: "center", textAlign: "center", maxWidth: "90%" },
+  chatGuess: { backgroundColor: "rgba(79, 70, 229, 0.1)", border: "1px solid rgba(79, 70, 229, 0.3)", color: "#c7d2fe", alignSelf: "center" },
+  chatAuthor: { fontWeight: 700, marginRight: "8px", color: "#818cf8" },
+  chatText: { wordBreak: "break-all" },
+  finishAnnouncement: { padding: "40px", textAlign: "center", backgroundColor: "#1e293b", borderRadius: "16px", marginTop: "20px", border: "2px solid #fbbf24" },
+  actionPanel: { padding: "24px", backgroundColor: "#1e293b", borderTop: "1px solid #334155" },
+  actionRow: { display: "flex", gap: "10px" },
+  input: { width: "100%", padding: "12px", backgroundColor: "#334155", border: "1px solid #475569", borderRadius: "8px", color: "#f1f5f9", marginBottom: "0px", fontSize: "1rem" },
+  select: { padding: "8px 12px", backgroundColor: "#334155", border: "1px solid #475569", borderRadius: "8px", color: "#f1f5f9" },
+  button: { width: "100%", padding: "12px", backgroundColor: "#6366f1", color: "white", fontWeight: 700, border: "none", borderRadius: "8px", cursor: "pointer" },
 };

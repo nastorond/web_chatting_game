@@ -1,7 +1,7 @@
 import {
   RoomState,
   Player,
-  Question,
+  ChatMessage,
   EndCondition,
   ServerToClientMessage,
 } from "./types";
@@ -13,10 +13,10 @@ import {
 const rooms = new Map<string, RoomState>();
 
 /**
- * 각 방의 질문들은 RoomState를 깔끔하게 유지하기 위해 별도로 관리됩니다.
- * questionsByRoom[roomId][questionId] = Question
+ * 각 방의 채팅 메시지들
+ * chatMessagesByRoom[roomId] = ChatMessage[]
  */
-const questionsByRoom = new Map<string, Map<string, Question>>();
+const chatMessagesByRoom = new Map<string, ChatMessage[]>();
 
 // ─────────────────────────────────────────────
 // 헬퍼 함수
@@ -46,34 +46,24 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
-/** 게임 종료 조건을 확인하고, 게임이 끝났다면 game_over 메시지를 반환합니다. */
-function checkGameOver(room: RoomState): ServerToClientMessage | null {
-  if (!room.endCondition) return null;
-
-  const nonJudge = room.players.filter((p) => !p.isJudge);
-  const alive = nonJudge.filter((p) => p.isAlive);
-
-  if (room.endCondition === "firstWin") {
-    const winner = nonJudge.find((p) => !p.isAlive);
-    if (winner) return { type: "game_over", winnerId: winner.id };
-  }
-
-  if (room.endCondition === "lastLose") {
-    if (alive.length <= 1) {
-      return { type: "game_over", winnerId: alive[0]?.id };
-    }
-  }
-
-  return null;
+/** 시스템 메시지 추가 헬퍼 */
+function addSystemMessage(roomId: string, text: string) {
+  const messages = chatMessagesByRoom.get(roomId) || [];
+  const sysMsg: ChatMessage = {
+    id: generateId(),
+    playerId: "system",
+    text,
+    kind: "system",
+    timestamp: Date.now(),
+  };
+  messages.push(sysMsg);
+  chatMessagesByRoom.set(roomId, messages);
 }
 
 // ─────────────────────────────────────────────
 // 방 생명주기
 // ─────────────────────────────────────────────
 
-/**
- * 새로운 방을 생성하고 등록합니다.
- */
 export function createRoom(roomId: string, hostId: string): RoomState {
   const room: RoomState = {
     id: roomId,
@@ -87,14 +77,10 @@ export function createRoom(roomId: string, hostId: string): RoomState {
     createdAt: Date.now(),
   };
   rooms.set(roomId, room);
-  questionsByRoom.set(roomId, new Map());
+  chatMessagesByRoom.set(roomId, []);
   return room;
 }
 
-/**
- * 기존 방에 플레이어를 추가합니다 (방이 없으면 생성합니다).
- * 반환값: 업데이트된 RoomState + 방송할 메시지 목록.
- */
 export function joinRoom(
   roomId: string,
   playerId: string,
@@ -102,7 +88,6 @@ export function joinRoom(
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   let room = rooms.get(roomId) ?? createRoom(roomId, playerId);
 
-  // 중복 추가 방지 (재연결 케이스)
   if (!room.players.find((p) => p.id === playerId)) {
     const isFirstPlayer = room.players.length === 0;
 
@@ -117,6 +102,7 @@ export function joinRoom(
 
     room = { ...room, players: [...room.players, newPlayer] };
     rooms.set(roomId, room);
+    addSystemMessage(roomId, `${name}님이 입장하셨습니다.`);
   }
 
   const messages: ServerToClientMessage[] = [
@@ -126,10 +112,6 @@ export function joinRoom(
   return { room, messages };
 }
 
-/**
- * 방에서 플레이어를 제거합니다.
- * 반환값: 업데이트된 RoomState + 메시지 목록, 또는 방이 삭제된 경우 null.
- */
 export function leaveRoom(
   roomId: string,
   playerId: string
@@ -137,10 +119,10 @@ export function leaveRoom(
   const room = rooms.get(roomId);
   if (!room) return { room: null, messages: [] };
 
+  const leavingPlayer = room.players.find(p => p.id === playerId);
   const updated: RoomState = {
     ...room,
     players: room.players.filter((p) => p.id !== playerId),
-    // 방장이 나간 경우 다음 플레이어를 방장으로 승격
     hostId: room.hostId === playerId
       ? (room.players.find((p) => p.id !== playerId)?.id ?? room.hostId)
       : room.hostId,
@@ -148,11 +130,15 @@ export function leaveRoom(
 
   if (updated.players.length === 0) {
     rooms.delete(roomId);
-    questionsByRoom.delete(roomId);
+    chatMessagesByRoom.delete(roomId);
     return { room: null, messages: [] };
   }
 
   rooms.set(roomId, updated);
+  if (leavingPlayer) {
+    addSystemMessage(roomId, `${leavingPlayer.name}님이 퇴장하셨습니다.`);
+  }
+
   const messages: ServerToClientMessage[] = [
     { type: "player_left", playerId },
     { type: "room_state", room: publicRoom(updated) },
@@ -161,12 +147,9 @@ export function leaveRoom(
 }
 
 // ─────────────────────────────────────────────
-// 게임 설정
+// 게임 설정 및 액션
 // ─────────────────────────────────────────────
 
-/**
- * 방장이 주제와 종료 조건을 설정합니다.
- */
 export function setTopicAndRule(
   roomId: string,
   topic: string,
@@ -176,6 +159,9 @@ export function setTopicAndRule(
   const updated: RoomState = { ...room, topic, endCondition, status: "word_submission" };
   rooms.set(roomId, updated);
 
+  addSystemMessage(roomId, `게임이 시작되었습니다! 주제: [${topic}]`);
+  addSystemMessage(roomId, `각 플레이어는 왼쪽 사람에게 배정할 단어를 입력해주세요.`);
+
   const messages: ServerToClientMessage[] = [
     { type: "topic_set", topic, endCondition },
     { type: "room_state", room: publicRoom(updated) },
@@ -183,11 +169,6 @@ export function setTopicAndRule(
   return { room: updated, messages };
 }
 
-/**
- * 플레이어 i가 왼쪽 플레이어((i+1) % n)를 위한 단어를 제출합니다.
- * 호출자(route.ts)는 이 함수를 호출하기 전에 `fromPlayerId`가 
- * `forPlayerId`에게 단어를 부여할 권한이 있는지 확인해야 합니다.
- */
 export function submitWord(
   roomId: string,
   fromPlayerId: string,
@@ -196,17 +177,14 @@ export function submitWord(
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   const room = getRoom(roomId);
   const targetIdx = room.players.findIndex((p) => p.id === forPlayerId);
-  if (targetIdx === -1) throw new Error(`Target player not found: ${forPlayerId}`);
-
-  // 원형 좌석 규칙 확인: fromPlayer는 forPlayer의 오른쪽 이웃이어야 합니다.
   const fromIdx = room.players.findIndex((p) => p.id === fromPlayerId);
+  
+  if (targetIdx === -1 || fromIdx === -1) throw new Error("Player not found.");
   const fromPlayer = room.players[fromIdx];
-  if (fromPlayer.wordSubmitted) throw new Error("Already submitted a word.");
+  if (fromPlayer.wordSubmitted) throw new Error("Already submitted.");
 
   const expectedFromIdx = (targetIdx - 1 + room.players.length) % room.players.length;
-  if (fromIdx !== expectedFromIdx) {
-    throw new Error("Word assignment violates circular seating rule.");
-  }
+  if (fromIdx !== expectedFromIdx) throw new Error("Circular rule violation.");
 
   const newPlayers = room.players.map((p) => {
     if (p.id === forPlayerId) return { ...p, secretWord: word };
@@ -217,149 +195,48 @@ export function submitWord(
   rooms.set(roomId, updated);
 
   const nonJudge = updated.players.filter(p => !p.isJudge);
-  const allAssigned = nonJudge.length >= 2 && nonJudge.every(
-    (p) => p.secretWord !== null
-  );
+  const allAssigned = nonJudge.length >= 2 && nonJudge.every(p => p.secretWord !== null);
 
   const messages: ServerToClientMessage[] = [];
   if (allAssigned) {
-    // 게임 시작 상태로 전환
     const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: 0 };
     rooms.set(roomId, playing);
+    addSystemMessage(roomId, `모든 단어 배정이 완료되었습니다. 게임을 시작합니다!`);
     messages.push({ type: "words_assigned" });
     messages.push({ type: "room_state", room: publicRoom(playing) });
-    const firstPlayer = playing.players[playing.turnIndex];
-    if (firstPlayer) {
-      messages.push({
-        type: "turn_started",
-        playerId: firstPlayer.id,
-        round: playing.round,
-        turnIndex: playing.turnIndex,
-      });
-    }
   }
 
   return { room: rooms.get(roomId)!, messages };
 }
 
-// ─────────────────────────────────────────────
-// 턴 관리
-// ─────────────────────────────────────────────
-
-/**
- * 다음 플레이어의 턴으로 진행합니다.
- * 모든 플레이어가 턴을 마치면 라운드를 올리고 다시 처음부터 시작합니다.
- */
-export function handleTurnEnd(
-  roomId: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  const room = getRoom(roomId);
-  const currentPlayer = room.players[room.turnIndex];
-
-  const messages: ServerToClientMessage[] = [
-    { type: "turn_ended", playerId: currentPlayer?.id ?? "" },
-  ];
-
-  const nextIndex = (room.turnIndex + 1) % room.players.length;
-  const nextRound = nextIndex === 0 ? room.round + 1 : room.round;
-
-  const updated: RoomState = {
-    ...room,
-    turnIndex: nextIndex,
-    round: nextRound,
-  };
-  rooms.set(roomId, updated);
-  messages.push({ type: "room_state", room: publicRoom(updated) });
-
-  const nextPlayer = updated.players[updated.turnIndex];
-  if (nextPlayer) {
-    messages.push({
-      type: "turn_started",
-      playerId: nextPlayer.id,
-      round: updated.round,
-      turnIndex: updated.turnIndex,
-    });
-  }
-
-  return { room: updated, messages };
-}
-
-// ─────────────────────────────────────────────
-// 게임 내 액션
-// ─────────────────────────────────────────────
-
-/**
- * 플레이어가 자신의 단어를 유추하기 위해 다른 플레이어에게 질문을 던집니다.
- */
-export function handleAskQuestion(
+/** 채팅 핸들러 */
+export function handleChat(
   roomId: string,
-  fromPlayerId: string,
-  toPlayerId: string,
+  playerId: string,
   text: string
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   const room = getRoom(roomId);
-  const questions = questionsByRoom.get(roomId)!;
+  const player = getPlayer(room, playerId);
 
-  // 침묵 여부 확인
-  const from = getPlayer(room, fromPlayerId);
-  if (from.penaltyUntil && from.penaltyUntil > Date.now()) {
-    throw new Error("You are muted.");
+  if (player.penaltyUntil && player.penaltyUntil > Date.now()) {
+    throw new Error("채팅 금지 상태입니다.");
   }
 
-  const question: Question = {
+  const messages = chatMessagesByRoom.get(roomId) || [];
+  const chatMsg: ChatMessage = {
     id: generateId(),
-    fromPlayerId,
-    toPlayerId,
+    playerId,
     text,
+    kind: "chat",
     timestamp: Date.now(),
   };
-  questions.set(question.id, question);
+  messages.push(chatMsg);
+  chatMessagesByRoom.set(roomId, messages);
 
-  const messages: ServerToClientMessage[] = [
-    {
-      type: "question_posted",
-      question: { id: question.id, fromPlayerId, toPlayerId, text, timestamp: question.timestamp },
-    },
-  ];
-
-  return { room, messages };
+  return { room, messages: [{ type: "chat_posted", message: chatMsg }] };
 }
 
-/**
- * 플레이어가 이전에 게시된 질문에 답변합니다.
- */
-export function handleAnswerQuestion(
-  roomId: string,
-  fromPlayerId: string,
-  questionId: string,
-  text: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  const room = getRoom(roomId);
-  const questions = questionsByRoom.get(roomId)!;
-  const question = questions.get(questionId);
-  if (!question) throw new Error(`Question not found: ${questionId}`);
-  if (question.toPlayerId !== fromPlayerId)
-    throw new Error("Only the addressed player may answer.");
-
-  // 침묵 여부 확인
-  const from = getPlayer(room, fromPlayerId);
-  if (from.penaltyUntil && from.penaltyUntil > Date.now()) {
-    throw new Error("You are muted.");
-  }
-
-  question.answer = text;
-  questions.set(questionId, question);
-
-  const messages: ServerToClientMessage[] = [
-    { type: "answer_posted", questionId, answer: text },
-  ];
-  return { room, messages };
-}
-
-/**
- * 플레이어가 자신의 단어를 추측합니다.
- * 종료 조건이 충족되면 선택적으로 game_over 메시지를 반환합니다.
- */
+/** 정답 추측 핸들러 */
 export function handleGuessWord(
   roomId: string,
   playerId: string,
@@ -374,17 +251,28 @@ export function handleGuessWord(
 
   const messages: ServerToClientMessage[] = [];
 
+  // 채팅에 추측 결과 기록
+  const guessMsg: ChatMessage = {
+    id: generateId(),
+    playerId,
+    text: `[정답 시도] ${guessText} -> ${correct ? "성공! 🎉" : "실패 ❌"}`,
+    kind: "guess",
+    timestamp: Date.now(),
+  };
+  const chatLog = chatMessagesByRoom.get(roomId) || [];
+  chatLog.push(guessMsg);
+  chatMessagesByRoom.set(roomId, chatLog);
+
   if (correct) {
-    // 플레이어를 '생존하지 않음(탈출)' 상태로 표시 (본인의 단어를 맞춤)
     const newPlayers = room.players.map((p) =>
       p.id === playerId ? { ...p, isAlive: false } : p
     );
     room = { ...room, players: newPlayers };
 
-    // 첫 번째 승자 모드 혹은 승리 시 즉시 종료 처리 지원
     if (room.endCondition === "firstWin") {
       room.status = "finished";
       room.winnerPlayerId = playerId;
+      addSystemMessage(roomId, `🏆 게임 종료! 승자: ${player.name}`);
     }
     rooms.set(roomId, room);
   }
@@ -392,19 +280,10 @@ export function handleGuessWord(
   messages.push({ type: "guess_result", playerId, correct, word: correct ? (player.secretWord ?? undefined) : undefined });
   messages.push({ type: "room_state", room: publicRoom(room) });
 
-  const gameOver = checkGameOver(room);
-  if (gameOver) {
-    room = { ...room, status: "finished" };
-    rooms.set(roomId, room);
-    messages.push(gameOver);
-  }
-
   return { room, messages };
 }
 
-/**
- * 심판이 플레이어에게 경고를 주거나 침묵(Mute) 조치를 취합니다.
- */
+/** 심판 조치 */
 export function handleJudgeAction(
   roomId: string,
   judgeId: string,
@@ -413,8 +292,9 @@ export function handleJudgeAction(
 ): { room: RoomState; messages: ServerToClientMessage[] } {
   let room = getRoom(roomId);
   const judge = getPlayer(room, judgeId);
-  if (!judge.isJudge) throw new Error("Only the judge can take this action.");
+  if (!judge.isJudge) throw new Error("Only judge can take action.");
 
+  const target = getPlayer(room, targetPlayerId);
   let penaltyUntil: number | undefined;
 
   const newPlayers = room.players.map((p) => {
@@ -423,39 +303,25 @@ export function handleJudgeAction(
       penaltyUntil = Date.now() + 30_000;
       return { ...p, penaltyUntil };
     }
-    return p; // 경고는 정보 제공용일 뿐 상태 변화 없음
+    return p;
   });
 
   room = { ...room, players: newPlayers };
   rooms.set(roomId, room);
 
-  const messages: ServerToClientMessage[] = [
-    { type: "judge_penalty", targetPlayerId, action, penaltyUntil },
-    { type: "room_state", room: publicRoom(room) },
-  ];
-  return { room, messages };
+  addSystemMessage(roomId, `[심판 조치] ${target.name}님에게 ${action === "warn" ? "경고" : "30초 침묵"} 조치가 내려졌습니다.`);
+
+  return { room, messages: [{ type: "room_state", room: publicRoom(room) }] };
 }
 
 // ─────────────────────────────────────────────
-// 조회 헬퍼 함수 (route.ts용)
+// 조회 함수
 // ─────────────────────────────────────────────
-
-export function getRooms(): Map<string, RoomState> {
-  return rooms;
-}
 
 export function getPublicRoom(roomId: string): RoomState {
   return publicRoom(getRoom(roomId));
 }
 
-/** 특정 방의 모든 질문 목록을 반환합니다. */
-export function getRoomQuestions(roomId: string): Question[] {
-  const roomQuestions = questionsByRoom.get(roomId);
-  if (!roomQuestions) return [];
-  return Array.from(roomQuestions.values());
-}
-
-/** 특정 플레이어에게 할당된 단어를 반환합니다 (서버 전용). */
-export function getPlayerWord(roomId: string, playerId: string): string | null | undefined {
-  return getRoom(roomId).players.find((p) => p.id === playerId)?.secretWord;
+export function getRoomChatMessages(roomId: string): ChatMessage[] {
+  return chatMessagesByRoom.get(roomId) || [];
 }

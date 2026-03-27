@@ -24,12 +24,12 @@ export async function POST(
     const { messages } = roomManager.joinRoom(roomId, playerId, name);
     const room = roomManager.getPublicRoom(roomId);
 
-    // 이 방의 모든 질문 목록 가져오기
-    const questions = roomManager.getRoomQuestions(roomId);
+    // 이 방의 모든 채팅 메시지 목록 가져오기
+    const chatMessages = roomManager.getRoomChatMessages(roomId);
 
     return NextResponse.json({
       room,
-      questions,
+      chatMessages,
       messages,
     });
   } catch (error: any) {

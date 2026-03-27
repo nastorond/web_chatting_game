@@ -4,7 +4,7 @@ import { ClientToServerMessage, ServerToClientMessage } from "@/lib/game/types";
 
 /**
  * [POST] /api/room/[roomId]/action
- * 플레이어의 다양한 액션(발언, 질문, 정답 추측, 심판 조치 등)을 처리합니다.
+ * 플레이어의 다양한 액션(발언, 단어 제출, 정답 추측, 심판 조치 등)을 처리합니다.
  */
 export async function POST(
   req: NextRequest,
@@ -39,18 +39,11 @@ export async function POST(
         result = roomManager.submitWord(roomId, playerId, action.forPlayerId, action.word);
         break;
 
-      case "ask_question":
-        if (!action.toPlayerId || !action.text) {
-          return NextResponse.json({ error: "toPlayerId와 text가 필요합니다." }, { status: 400 });
+      case "chat":
+        if (!action.text) {
+          return NextResponse.json({ error: "채팅 내용이 필요합니다." }, { status: 400 });
         }
-        result = roomManager.handleAskQuestion(roomId, playerId, action.toPlayerId, action.text);
-        break;
-
-      case "answer_question":
-        if (!action.questionId || !action.text) {
-          return NextResponse.json({ error: "questionId와 text가 필요합니다." }, { status: 400 });
-        }
-        result = roomManager.handleAnswerQuestion(roomId, playerId, action.questionId, action.text);
+        result = roomManager.handleChat(roomId, playerId, action.text);
         break;
 
       case "guess_word":
@@ -86,11 +79,11 @@ export async function POST(
 
     // 처리 후 최신 상태 반환
     const room = roomManager.getPublicRoom(roomId);
-    const questions = roomManager.getRoomQuestions(roomId);
+    const chatMessages = roomManager.getRoomChatMessages(roomId);
 
     return NextResponse.json({
       room,
-      questions,
+      chatMessages,
       messages: result?.messages || [],
     });
   } catch (error: any) {
