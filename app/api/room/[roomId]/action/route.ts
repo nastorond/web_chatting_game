@@ -60,6 +60,14 @@ export async function POST(
         result = roomManager.postAnswer(roomId, playerId, action.text);
         break;
 
+      case "end_turn":
+        result = roomManager.endTurn(roomId, playerId);
+        break;
+
+      case "force_next_turn":
+        result = roomManager.forceNextTurn(roomId, playerId);
+        break;
+
       case "guess_word":
         if (!action.text) {
           return NextResponse.json({ error: "추측할 text가 필요합니다." }, { status: 400 });

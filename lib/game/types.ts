@@ -51,6 +51,8 @@ export type ClientToServerMessage =
   | { type: "chat"; text: string }
   | { type: "post_question"; text: string }
   | { type: "post_answer"; text: string }
+  | { type: "end_turn" }
+  | { type: "force_next_turn" }
   | { type: "guess_word"; text: string }
   | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" };
 

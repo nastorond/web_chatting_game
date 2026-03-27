@@ -305,12 +305,7 @@ export function postQuestion(
   messages.push(msg);
   chatMessagesByRoom.set(roomId, messages);
 
-  // 턴 넘기기
-  room = nextTurn(room);
-  rooms.set(roomId, room);
-  addSystemMessage(roomId, `다음 차례: ${room.players[room.turnIndex].name}`);
-
-  return { room, messages: [{ type: "chat_posted", message: msg }, { type: "room_state", room: publicRoom(room) }] };
+  return { room, messages: [{ type: "chat_posted", message: msg }] };
 }
 
 /** 정답 시도 핸들러 */
@@ -365,15 +360,62 @@ export function postAnswer(
     }
   }
 
-  // 턴 넘기기 (게임이 종료되지 않은 경우에만)
-  if (room.status === "playing") {
-    room = nextTurn(room);
-    addSystemMessage(roomId, `다음 차례: ${room.players[room.turnIndex].name}`);
-  }
-  
   rooms.set(roomId, room);
 
   return { room, messages: [{ type: "room_state", room: publicRoom(room) }] };
+}
+
+/** 차례 넘기기 (플레이어 스스로) */
+export function endTurn(
+  roomId: string,
+  playerId: string
+): { room: RoomState; messages: ServerToClientMessage[] } {
+  let room = getRoom(roomId);
+  const player = getPlayer(room, playerId);
+
+  if (room.players[room.turnIndex]?.id !== playerId) {
+    throw new Error("현재 차례가 아닙니다.");
+  }
+
+  const prevPlayerName = player.name;
+  room = nextTurn(room);
+  rooms.set(roomId, room);
+
+  const nextPlayer = room.players[room.turnIndex];
+  addSystemMessage(roomId, `${prevPlayerName}님이 차례를 넘겼습니다. 다음 차례: ${nextPlayer.name}`);
+
+  return {
+    room,
+    messages: [
+      { type: "room_state", room: publicRoom(room) }
+    ]
+  };
+}
+
+/** 강제 차례 넘기기 (진행자/심판 전용) */
+export function forceNextTurn(
+  roomId: string,
+  judgeId: string
+): { room: RoomState; messages: ServerToClientMessage[] } {
+  let room = getRoom(roomId);
+  const judge = getPlayer(room, judgeId);
+
+  if (!judge.isJudge) {
+    throw new Error("심판만 차례를 강제로 넘길 수 있습니다.");
+  }
+
+  room = nextTurn(room);
+  rooms.set(roomId, room);
+
+  const nextPlayer = room.players[room.turnIndex];
+  addSystemMessage(roomId, `진행자에 의해 차례가 강제로 넘어갔습니다. 다음 차례: ${nextPlayer.name}`);
+
+  return {
+    room,
+    messages: [
+      { type: "room_state", room: publicRoom(room) }
+    ]
+  };
 }
 
 /** 정답 추측 핸들러 (기존 호환용 유지) */

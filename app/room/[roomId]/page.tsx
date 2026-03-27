@@ -343,10 +343,22 @@ export default function GameRoomPage() {
             <div style={styles.gameArea}>
               {room?.status === "playing" && (
                 <div style={styles.turnInfo}>
-                  <span style={{ fontWeight: 700, color: "#818cf8" }}>라운드 {room.round}</span>
-                  <span style={{ margin: "0 10px" }}>|</span>
-                  <span>현재 차례: <strong>{currentTurnPlayer?.name}</strong></span>
-                  {isMyTurn && <span style={styles.myTurnBadge}>당신의 차례입니다!</span>}
+                  <div style={{ display: "flex", alignItems: "center", flex: 1 }}>
+                    <span style={{ fontWeight: 700, color: "#818cf8" }}>라운드 {room.round}</span>
+                    <span style={{ margin: "0 10px" }}>|</span>
+                    <span>현재 차례: <strong>{currentTurnPlayer?.name}</strong></span>
+                    {isMyTurn && <span style={styles.myTurnBadge}>당신의 차례입니다!</span>}
+                  </div>
+                  {/* 심판 강제 넘기기 버튼 */}
+                  {iAmJudge && room.status === "playing" && (
+                    <button 
+                      style={styles.forceTurnButton} 
+                      onClick={() => performAction({ type: "force_next_turn" })}
+                      disabled={loadingAction}
+                    >
+                      강제 넘기기 ⏩
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -388,6 +400,13 @@ export default function GameRoomPage() {
                     <div style={styles.turnButtonGroup}>
                       <button style={styles.actionButton} onClick={() => setQuestionModalOpen(true)}>질문하기</button>
                       <button style={{ ...styles.actionButton, backgroundColor: "#059669" }} onClick={() => setAnswerModalOpen(true)}>정답 시도하기</button>
+                      <button 
+                        style={{ ...styles.actionButton, backgroundColor: "#475569" }} 
+                        onClick={() => performAction({ type: "end_turn" })}
+                        disabled={loadingAction}
+                      >
+                        차례 넘기기
+                      </button>
                     </div>
                   )}
                   {/* 자유 채팅 입력 */}
@@ -502,4 +521,5 @@ const styles: Record<string, React.CSSProperties> = {
   modalButtons: { display: "flex", gap: "12px", marginTop: "20px" },
   modalSubmit: { flex: 2, padding: "12px", backgroundColor: "#4f46e5", color: "white", fontWeight: 700, borderRadius: "8px", border: "none", cursor: "pointer" },
   modalCancel: { flex: 1, padding: "12px", backgroundColor: "transparent", color: "#94a3b8", fontWeight: 700, borderRadius: "8px", border: "1px solid #334155", cursor: "pointer" },
+  forceTurnButton: { padding: "6px 12px", backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#f87171", border: "1px solid #ef4444", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" },
 };
