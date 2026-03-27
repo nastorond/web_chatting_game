@@ -51,7 +51,8 @@ export type ClientToServerMessage =
   | { type: "ask_question"; toPlayerId: string; text: string }
   | { type: "answer_question"; questionId: string; text: string }
   | { type: "guess_word"; text: string }
-  | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" };
+  | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" }
+  | { type: "leave_room" };
 
 // ─────────────────────────────────────────────
 // 서버 → 클라이언트 메시지
