@@ -187,9 +187,13 @@ export default function GameRoomPage() {
   const currentTurnPlayer = room?.players[room.turnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
 
-  const myIndex = room ? room.players.findIndex(p => p.id === myPlayerId) : -1;
-  const targetForWordAssign = room && myIndex !== -1 
-    ? room.players[(myIndex + 1) % room.players.length] 
+  const nonJudgePlayers = room ? room.players.filter(p => !p.isJudge) : [];
+  const myIndexInNonJudge = room && myPlayerId
+    ? nonJudgePlayers.findIndex(p => p.id === myPlayerId)
+    : -1;
+
+  const targetForWordAssign = room && myIndexInNonJudge !== -1
+    ? nonJudgePlayers[(myIndexInNonJudge + 1) % nonJudgePlayers.length]
     : null;
 
   const getStatusLabel = (status: string | undefined) => {
