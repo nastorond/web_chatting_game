@@ -29,69 +29,78 @@ export async function POST(
         if (!action.topic || !action.endCondition) {
           return NextResponse.json({ error: "topic과 endCondition이 필요합니다." }, { status: 400 });
         }
-        result = roomManager.setTopicAndRule(roomId, action.topic, action.endCondition);
+        result = await roomManager.setTopicAndRule(roomId, action.topic, action.endCondition);
         break;
 
       case "submit_word":
         if (!action.forPlayerId || !action.word) {
           return NextResponse.json({ error: "forPlayerId와 word가 필요합니다." }, { status: 400 });
         }
-        result = roomManager.submitWord(roomId, playerId, action.forPlayerId, action.word);
+        result = await roomManager.submitWord(roomId, playerId, action.forPlayerId, action.word);
         break;
 
       case "chat":
         if (!action.text) {
           return NextResponse.json({ error: "채팅 내용이 필요합니다." }, { status: 400 });
         }
-        result = roomManager.handleChat(roomId, playerId, action.text);
+        result = await roomManager.handleChat(roomId, playerId, action.text);
         break;
 
       case "post_question":
         if (!action.text) {
           return NextResponse.json({ error: "질문 내용이 필요합니다." }, { status: 400 });
         }
-        result = roomManager.postQuestion(roomId, playerId, action.text);
+        result = await roomManager.postQuestion(roomId, playerId, action.text);
         break;
 
       case "post_answer":
         if (!action.text) {
           return NextResponse.json({ error: "전달할 내용이 필요합니다." }, { status: 400 });
         }
-        result = roomManager.postAnswer(roomId, playerId, action.text);
+        result = await roomManager.postAnswer(roomId, playerId, action.text);
         break;
 
       case "end_turn":
-        result = roomManager.endTurn(roomId, playerId);
+        result = await roomManager.endTurn(roomId, playerId);
         break;
 
       case "force_next_turn":
-        result = roomManager.forceNextTurn(roomId, playerId);
+        result = await roomManager.forceNextTurn(roomId, playerId);
         break;
 
       case "guess_word":
         if (!action.text) {
           return NextResponse.json({ error: "추측할 text가 필요합니다." }, { status: 400 });
         }
-        result = roomManager.handleGuessWord(roomId, playerId, action.text);
+        result = await roomManager.handleGuessWord(roomId, playerId, action.text);
         break;
 
       case "judge_action":
         if (!action.targetPlayerId || !action.action) {
           return NextResponse.json({ error: "targetPlayerId와 action이 필요합니다." }, { status: 400 });
         }
-        result = roomManager.handleJudgeAction(roomId, playerId, action.targetPlayerId, action.action);
+        result = await roomManager.handleJudgeAction(roomId, playerId, action.targetPlayerId, action.action);
         break;
 
       case "join_room":
         if (!action.name) {
           return NextResponse.json({ error: "name이 필요합니다." }, { status: 400 });
         }
-        const joinRes = roomManager.joinRoom(roomId, playerId, action.name);
+        const joinRes = await roomManager.joinRoom(roomId, playerId, action.name);
         result = { messages: joinRes.messages };
         break;
 
       case "leave_room":
-        const leaveRes = roomManager.leaveRoom(roomId, playerId);
+        const leaveRes = await roomManager.leaveRoom(roomId, playerId);
+        if (!leaveRes.room) {
+          // 방이 삭제된 경우
+          return NextResponse.json({
+            room: null,
+            chatMessages: [],
+            visibleWords: [],
+            messages: leaveRes.messages,
+          });
+        }
         result = { messages: leaveRes.messages };
         break;
 
@@ -100,9 +109,9 @@ export async function POST(
     }
 
     // 처리 후 최신 상태 및 가시 단어 목록 반환
-    const room = roomManager.getPublicRoom(roomId);
-    const chatMessages = roomManager.getRoomChatMessages(roomId);
-    const visibleWords = roomManager.getVisibleWords(roomId, playerId);
+    const room = await roomManager.getPublicRoom(roomId);
+    const chatMessages = await roomManager.getRoomChatMessages(roomId);
+    const visibleWords = await roomManager.getVisibleWords(roomId, playerId);
 
     return NextResponse.json({
       room,

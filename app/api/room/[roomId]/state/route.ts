@@ -18,9 +18,9 @@ export async function GET(
       return NextResponse.json({ error: "playerId query parameter is required" }, { status: 400 });
     }
 
-    const room = getPublicRoom(roomId);
-    const chatMessages = getRoomChatMessages(roomId);
-    const visibleWords = getVisibleWords(roomId, playerId);
+    const room = await getPublicRoom(roomId);
+    const chatMessages = await getRoomChatMessages(roomId);
+    const visibleWords = await getVisibleWords(roomId, playerId);
 
     return NextResponse.json({
       room,

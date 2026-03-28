@@ -5,25 +5,50 @@ import {
   EndCondition,
   ServerToClientMessage,
 } from "./types";
+import { redis } from "@/lib/redis";
 
 // ─────────────────────────────────────────────
-// 인메모리 저장소
+// Redis 키 및 TTL 상수
 // ─────────────────────────────────────────────
 
-const rooms = new Map<string, RoomState>();
+const ROOM_TTL = 3600;          // 활성 방: 1시간
+const FINISHED_ROOM_TTL = 300;  // 종료된 방: 5분
 
-/**
- * 각 방의 채팅 메시지들
- * chatMessagesByRoom[roomId] = ChatMessage[]
- */
-const chatMessagesByRoom = new Map<string, ChatMessage[]>();
+// ─────────────────────────────────────────────
+// Redis 헬퍼 함수
+// ─────────────────────────────────────────────
+
+async function getRoomFromRedis(roomId: string): Promise<RoomState | null> {
+  return await redis.get<RoomState>(`room:${roomId}`);
+}
+
+async function saveRoom(roomId: string, room: RoomState): Promise<void> {
+  const ttl = room.status === "finished" ? FINISHED_ROOM_TTL : ROOM_TTL;
+  await redis.set(`room:${roomId}`, room, { ex: ttl });
+}
+
+async function deleteRoom(roomId: string): Promise<void> {
+  // 방과 채팅 메시지 모두 삭제
+  await redis.del(`room:${roomId}`, `chat:${roomId}`);
+}
+
+async function getChatMessages(roomId: string): Promise<ChatMessage[]> {
+  return (await redis.get<ChatMessage[]>(`chat:${roomId}`)) || [];
+}
+
+async function saveChatMessages(roomId: string, messages: ChatMessage[]): Promise<void> {
+  const trimmed = messages.slice(-200); // 최근 200개만 유지
+  const room = await getRoomFromRedis(roomId);
+  const ttl = room?.status === "finished" ? FINISHED_ROOM_TTL : ROOM_TTL;
+  await redis.set(`chat:${roomId}`, trimmed, { ex: ttl });
+}
 
 // ─────────────────────────────────────────────
 // 헬퍼 함수
 // ─────────────────────────────────────────────
 
-function getRoom(roomId: string): RoomState {
-  const room = rooms.get(roomId);
+async function getRoom(roomId: string): Promise<RoomState> {
+  const room = await getRoomFromRedis(roomId);
   if (!room) throw new Error(`Room not found: ${roomId}`);
   return room;
 }
@@ -47,8 +72,8 @@ function generateId(): string {
 }
 
 /** 시스템 메시지 추가 헬퍼 */
-function addSystemMessage(roomId: string, text: string) {
-  const messages = chatMessagesByRoom.get(roomId) || [];
+async function addSystemMessage(roomId: string, text: string): Promise<void> {
+  const messages = await getChatMessages(roomId);
   const sysMsg: ChatMessage = {
     id: generateId(),
     playerId: "system",
@@ -57,7 +82,7 @@ function addSystemMessage(roomId: string, text: string) {
     timestamp: Date.now(),
   };
   messages.push(sysMsg);
-  chatMessagesByRoom.set(roomId, messages);
+  await saveChatMessages(roomId, messages);
 }
 
 /** 턴 넘기기 헬퍼 (심판 및 탈락자 제외) */
@@ -69,7 +94,7 @@ function nextTurn(room: RoomState): RoomState {
   // 최대 players.length만큼 순회하며 유효한 다음 플레이어 찾기
   for (let i = 0; i < players.length; i++) {
     newIndex = (newIndex + 1) % players.length;
-    
+
     // 한 바퀴 돌았으면 라운드 증가
     if (newIndex === 0) round++;
 
@@ -86,7 +111,7 @@ function nextTurn(room: RoomState): RoomState {
 // 방 생명주기
 // ─────────────────────────────────────────────
 
-export function createRoom(roomId: string, hostId: string): RoomState {
+export async function createRoom(roomId: string, hostId: string): Promise<RoomState> {
   const room: RoomState = {
     id: roomId,
     hostId,
@@ -98,17 +123,17 @@ export function createRoom(roomId: string, hostId: string): RoomState {
     status: "waiting",
     createdAt: Date.now(),
   };
-  rooms.set(roomId, room);
-  chatMessagesByRoom.set(roomId, []);
+  await saveRoom(roomId, room);
+  await saveChatMessages(roomId, []);
   return room;
 }
 
-export function joinRoom(
+export async function joinRoom(
   roomId: string,
   playerId: string,
   name: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  let room = rooms.get(roomId) ?? createRoom(roomId, playerId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  let room = (await getRoomFromRedis(roomId)) ?? (await createRoom(roomId, playerId));
 
   if (!room.players.find((p) => p.id === playerId)) {
     const isFirstPlayer = room.players.length === 0;
@@ -123,8 +148,8 @@ export function joinRoom(
     };
 
     room = { ...room, players: [...room.players, newPlayer] };
-    rooms.set(roomId, room);
-    addSystemMessage(roomId, `${name}님이 입장하셨습니다.`);
+    await saveRoom(roomId, room);
+    await addSystemMessage(roomId, `${name}님이 입장하셨습니다.`);
   }
 
   const messages: ServerToClientMessage[] = [
@@ -134,11 +159,11 @@ export function joinRoom(
   return { room, messages };
 }
 
-export function leaveRoom(
+export async function leaveRoom(
   roomId: string,
   playerId: string
-): { room: RoomState | null; messages: ServerToClientMessage[] } {
-  const room = rooms.get(roomId);
+): Promise<{ room: RoomState | null; messages: ServerToClientMessage[] }> {
+  const room = await getRoomFromRedis(roomId);
   if (!room) return { room: null, messages: [] };
 
   const leavingPlayer = room.players.find(p => p.id === playerId);
@@ -151,14 +176,13 @@ export function leaveRoom(
   };
 
   if (updated.players.length === 0) {
-    rooms.delete(roomId);
-    chatMessagesByRoom.delete(roomId);
+    await deleteRoom(roomId);
     return { room: null, messages: [] };
   }
 
-  rooms.set(roomId, updated);
+  await saveRoom(roomId, updated);
   if (leavingPlayer) {
-    addSystemMessage(roomId, `${leavingPlayer.name}님이 퇴장하셨습니다.`);
+    await addSystemMessage(roomId, `${leavingPlayer.name}님이 퇴장하셨습니다.`);
   }
 
   const messages: ServerToClientMessage[] = [
@@ -172,17 +196,17 @@ export function leaveRoom(
 // 게임 설정 및 액션
 // ─────────────────────────────────────────────
 
-export function setTopicAndRule(
+export async function setTopicAndRule(
   roomId: string,
   topic: string,
   endCondition: EndCondition
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  const room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  const room = await getRoom(roomId);
   const updated: RoomState = { ...room, topic, endCondition, status: "word_submission" };
-  rooms.set(roomId, updated);
+  await saveRoom(roomId, updated);
 
-  addSystemMessage(roomId, `게임이 시작되었습니다! 주제: [${topic}]`);
-  addSystemMessage(roomId, `각 플레이어는 배정할 단어를 입력해주세요. (서버가 자동으로 할당합니다.)`);
+  await addSystemMessage(roomId, `게임이 시작되었습니다! 주제: [${topic}]`);
+  await addSystemMessage(roomId, `각 플레이어는 배정할 단어를 입력해주세요. (서버가 자동으로 할당합니다.)`);
 
   const messages: ServerToClientMessage[] = [
     { type: "topic_set", topic, endCondition },
@@ -191,13 +215,13 @@ export function setTopicAndRule(
   return { room: updated, messages };
 }
 
-export function submitWord(
+export async function submitWord(
   roomId: string,
   fromPlayerId: string,
   forPlayerId: string,
   word: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  const room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  const room = await getRoom(roomId);
   const fromPlayer = getPlayer(room, fromPlayerId);
 
   // 심판은 단어 제출 불가
@@ -230,7 +254,7 @@ export function submitWord(
   });
 
   const updated: RoomState = { ...room, players: newPlayers };
-  rooms.set(roomId, updated);
+  await saveRoom(roomId, updated);
 
   const nonJudge = updated.players.filter(p => !p.isJudge);
   const allAssigned = nonJudge.length >= 2 && nonJudge.every(p => p.secretWord !== null);
@@ -242,32 +266,33 @@ export function submitWord(
     const firstTurnIdx = updated.players.findIndex(p => p.id === firstTurnPlayer.id);
 
     const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: firstTurnIdx };
-    rooms.set(roomId, playing);
-    
-    addSystemMessage(roomId, `모든 단어 배정이 완료되었습니다. 게임을 시작합니다!`);
-    addSystemMessage(roomId, `현재 차례: ${firstTurnPlayer.name}`);
-    
+    await saveRoom(roomId, playing);
+
+    await addSystemMessage(roomId, `모든 단어 배정이 완료되었습니다. 게임을 시작합니다!`);
+    await addSystemMessage(roomId, `현재 차례: ${firstTurnPlayer.name}`);
+
     messages.push({ type: "words_assigned" });
     messages.push({ type: "room_state", room: publicRoom(playing) });
   }
 
-  return { room: rooms.get(roomId)!, messages };
+  const finalRoom = await getRoomFromRedis(roomId);
+  return { room: finalRoom!, messages };
 }
 
 /** 채팅 핸들러 */
-export function handleChat(
+export async function handleChat(
   roomId: string,
   playerId: string,
   text: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  const room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  const room = await getRoom(roomId);
   const player = getPlayer(room, playerId);
 
   if (player.penaltyUntil && player.penaltyUntil > Date.now()) {
     throw new Error("채팅 금지 상태입니다.");
   }
 
-  const messages = chatMessagesByRoom.get(roomId) || [];
+  const messages = await getChatMessages(roomId);
   const chatMsg: ChatMessage = {
     id: generateId(),
     playerId,
@@ -276,25 +301,24 @@ export function handleChat(
     timestamp: Date.now(),
   };
   messages.push(chatMsg);
-  chatMessagesByRoom.set(roomId, messages);
+  await saveChatMessages(roomId, messages);
 
   return { room, messages: [{ type: "chat_posted", message: chatMsg }] };
 }
 
 /** 질문 등록 핸들러 */
-export function postQuestion(
+export async function postQuestion(
   roomId: string,
   playerId: string,
   text: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  let room = getRoom(roomId);
-  const player = getPlayer(room, playerId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  const room = await getRoom(roomId);
 
   if (room.players[room.turnIndex]?.id !== playerId) {
     throw new Error("현재 차례가 아닙니다.");
   }
 
-  const messages = chatMessagesByRoom.get(roomId) || [];
+  const messages = await getChatMessages(roomId);
   const msg: ChatMessage = {
     id: generateId(),
     playerId,
@@ -303,18 +327,18 @@ export function postQuestion(
     timestamp: Date.now(),
   };
   messages.push(msg);
-  chatMessagesByRoom.set(roomId, messages);
+  await saveChatMessages(roomId, messages);
 
   return { room, messages: [{ type: "chat_posted", message: msg }] };
 }
 
 /** 정답 시도 핸들러 */
-export function postAnswer(
+export async function postAnswer(
   roomId: string,
   playerId: string,
   text: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  let room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  let room = await getRoom(roomId);
   const player = getPlayer(room, playerId);
 
   if (room.players[room.turnIndex]?.id !== playerId) {
@@ -322,7 +346,7 @@ export function postAnswer(
   }
 
   // 채팅에 기록 (kind: answer)
-  const chatLog = chatMessagesByRoom.get(roomId) || [];
+  const chatLog = await getChatMessages(roomId);
   const msg: ChatMessage = {
     id: generateId(),
     playerId,
@@ -331,12 +355,13 @@ export function postAnswer(
     timestamp: Date.now(),
   };
   chatLog.push(msg);
-  chatMessagesByRoom.set(roomId, chatLog);
+  await saveChatMessages(roomId, chatLog);
 
-  // 정답 판정 (기존 handleGuessWord 로직 활용)
+  // 정답 판정
   const correct = !!player.secretWord && player.secretWord.trim().toLowerCase() === text.trim().toLowerCase();
-  
+
   // 정답 시도 결과 메시지 추가 (kind: guess)
+  const updatedLog = await getChatMessages(roomId);
   const resultMsg: ChatMessage = {
     id: generateId(),
     playerId,
@@ -344,8 +369,8 @@ export function postAnswer(
     kind: "guess",
     timestamp: Date.now(),
   };
-  chatLog.push(resultMsg);
-  chatMessagesByRoom.set(roomId, chatLog);
+  updatedLog.push(resultMsg);
+  await saveChatMessages(roomId, updatedLog);
 
   if (correct) {
     const newPlayers = room.players.map((p) =>
@@ -356,21 +381,21 @@ export function postAnswer(
     if (room.endCondition === "firstWin") {
       room.status = "finished";
       room.winnerPlayerId = playerId;
-      addSystemMessage(roomId, `🏆 게임 종료! 승자: ${player.name}`);
+      await addSystemMessage(roomId, `🏆 게임 종료! 승자: ${player.name}`);
     }
   }
 
-  rooms.set(roomId, room);
+  await saveRoom(roomId, room);
 
   return { room, messages: [{ type: "room_state", room: publicRoom(room) }] };
 }
 
 /** 차례 넘기기 (플레이어 스스로) */
-export function endTurn(
+export async function endTurn(
   roomId: string,
   playerId: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  let room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  let room = await getRoom(roomId);
   const player = getPlayer(room, playerId);
 
   if (room.players[room.turnIndex]?.id !== playerId) {
@@ -379,10 +404,10 @@ export function endTurn(
 
   const prevPlayerName = player.name;
   room = nextTurn(room);
-  rooms.set(roomId, room);
+  await saveRoom(roomId, room);
 
   const nextPlayer = room.players[room.turnIndex];
-  addSystemMessage(roomId, `${prevPlayerName}님이 차례를 넘겼습니다. 다음 차례: ${nextPlayer.name}`);
+  await addSystemMessage(roomId, `${prevPlayerName}님이 차례를 넘겼습니다. 다음 차례: ${nextPlayer.name}`);
 
   return {
     room,
@@ -393,11 +418,11 @@ export function endTurn(
 }
 
 /** 강제 차례 넘기기 (진행자/심판 전용) */
-export function forceNextTurn(
+export async function forceNextTurn(
   roomId: string,
   judgeId: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  let room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  let room = await getRoom(roomId);
   const judge = getPlayer(room, judgeId);
 
   if (!judge.isJudge) {
@@ -405,10 +430,10 @@ export function forceNextTurn(
   }
 
   room = nextTurn(room);
-  rooms.set(roomId, room);
+  await saveRoom(roomId, room);
 
   const nextPlayer = room.players[room.turnIndex];
-  addSystemMessage(roomId, `진행자에 의해 차례가 강제로 넘어갔습니다. 다음 차례: ${nextPlayer.name}`);
+  await addSystemMessage(roomId, `진행자에 의해 차례가 강제로 넘어갔습니다. 다음 차례: ${nextPlayer.name}`);
 
   return {
     room,
@@ -419,23 +444,23 @@ export function forceNextTurn(
 }
 
 /** 정답 추측 핸들러 (기존 호환용 유지) */
-export function handleGuessWord(
+export async function handleGuessWord(
   roomId: string,
   playerId: string,
   guessText: string
-): { room: RoomState; messages: ServerToClientMessage[] } {
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
   // postAnswer와 유사하지만 turn 제약이 없을 수 있는 용도로 남겨둠 (필요시 호출)
   return postAnswer(roomId, playerId, guessText);
 }
 
 /** 심판 조치 */
-export function handleJudgeAction(
+export async function handleJudgeAction(
   roomId: string,
   judgeId: string,
   targetPlayerId: string,
   action: "warn" | "mute_30s"
-): { room: RoomState; messages: ServerToClientMessage[] } {
-  let room = getRoom(roomId);
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  let room = await getRoom(roomId);
   const judge = getPlayer(room, judgeId);
   if (!judge.isJudge) throw new Error("Only judge can take action.");
 
@@ -452,9 +477,9 @@ export function handleJudgeAction(
   });
 
   room = { ...room, players: newPlayers };
-  rooms.set(roomId, room);
+  await saveRoom(roomId, room);
 
-  addSystemMessage(roomId, `[심판 조치] ${target.name}님에게 ${action === "warn" ? "경고" : "30초 침묵"} 조치가 내려졌습니다.`);
+  await addSystemMessage(roomId, `[심판 조치] ${target.name}님에게 ${action === "warn" ? "경고" : "30초 침묵"} 조치가 내려졌습니다.`);
 
   return { room, messages: [{ type: "room_state", room: publicRoom(room) }] };
 }
@@ -463,18 +488,21 @@ export function handleJudgeAction(
 // 조회 함수
 // ─────────────────────────────────────────────
 
-export function getPublicRoom(roomId: string): RoomState {
-  return publicRoom(getRoom(roomId));
+export async function getPublicRoom(roomId: string): Promise<RoomState> {
+  return publicRoom(await getRoom(roomId));
 }
 
-export function getVisibleWords(roomId: string, viewerPlayerId: string): { playerId: string; word: string | null }[] {
-  const room = getRoom(roomId);
+export async function getVisibleWords(
+  roomId: string,
+  viewerPlayerId: string
+): Promise<{ playerId: string; word: string | null }[]> {
+  const room = await getRoom(roomId);
   return room.players.map(p => ({
     playerId: p.id,
     word: p.id === viewerPlayerId ? null : p.secretWord,
   }));
 }
 
-export function getRoomChatMessages(roomId: string): ChatMessage[] {
-  return chatMessagesByRoom.get(roomId) || [];
+export async function getRoomChatMessages(roomId: string): Promise<ChatMessage[]> {
+  return getChatMessages(roomId);
 }
