@@ -8,9 +8,12 @@ import { useRouter } from "next/navigation";
 interface ChatLogProps {
   chatMessages: ChatMessage[];
   room: RoomState | null;
+  iAmJudge: boolean;
+  performAction: (action: any) => Promise<void>;
+  loadingAction: boolean;
 }
 
-export function ChatLog({ chatMessages, room }: ChatLogProps) {
+export function ChatLog({ chatMessages, room, iAmJudge, performAction, loadingAction }: ChatLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
 
@@ -55,9 +58,21 @@ export function ChatLog({ chatMessages, room }: ChatLogProps) {
           {room.winnerPlayerId && (
             <p>최종 승자: <strong>{room.players.find(p => p.id === room.winnerPlayerId)?.name}</strong></p>
           )}
-          <button className={styles.button} style={{ width: "auto", marginTop: "20px" }} onClick={() => router.push("/")}>
-            로비로 이동
-          </button>
+          <div className={styles.buttonGroup}>
+            {iAmJudge && (
+              <button 
+                className={styles.button} 
+                style={{ width: "auto", marginTop: "20px", marginRight: "10px", backgroundColor: "#818cf8" }} 
+                onClick={() => performAction({ type: "restart_game" })}
+                disabled={loadingAction}
+              >
+                {loadingAction ? "재시작 중..." : "다시 시작"}
+              </button>
+            )}
+            <button className={styles.button} style={{ width: "auto", marginTop: "20px" }} onClick={() => router.push("/")}>
+              로비로 이동
+            </button>
+          </div>
         </div>
       )}
     </div>

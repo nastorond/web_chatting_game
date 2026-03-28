@@ -82,6 +82,10 @@ export async function POST(
         result = await roomManager.handleJudgeAction(roomId, playerId, action.targetPlayerId, action.action);
         break;
 
+      case "restart_game":
+        result = await roomManager.restartGame(roomId, playerId);
+        break;
+
       case "join_room":
         if (!action.name) {
           return NextResponse.json({ error: "name이 필요합니다." }, { status: 400 });

@@ -92,7 +92,14 @@ export default function GameRoomPage() {
       {errorBanner && <div className={styles.errorBanner}>{errorBanner}</div>}
 
       <main className={styles.main}>
-        <PlayerSidebar room={room} myPlayerId={myPlayerId} visibleWords={visibleWords} />
+        <PlayerSidebar
+          room={room}
+          myPlayerId={myPlayerId}
+          visibleWords={visibleWords}
+          iAmJudge={iAmJudge}
+          performAction={performAction}
+          loadingAction={loadingAction}
+        />
         
         <section className={styles.content}>
           {room && (
@@ -117,6 +124,7 @@ export default function GameRoomPage() {
               setAnswerModalOpen={setAnswerModalOpen}
               performAction={performAction}
               currentTurnPlayer={currentTurnPlayer}
+              turnActionUsed={room.turnActionUsed}
             />
           )}
         </section>

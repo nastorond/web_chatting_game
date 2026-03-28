@@ -26,6 +26,7 @@ interface PhaseProps {
   setAnswerModalOpen: (v: boolean) => void;
   performAction: (a: any) => Promise<void>;
   currentTurnPlayer: Player | undefined;
+  turnActionUsed?: { playerId: string; actionType: "question" | "answer" } | null;
 }
 
 export function GamePhases({
@@ -48,7 +49,8 @@ export function GamePhases({
   setQuestionModalOpen,
   setAnswerModalOpen,
   performAction,
-  currentTurnPlayer
+  currentTurnPlayer,
+  turnActionUsed
 }: PhaseProps) {
   
   if (room.status === "waiting") {
@@ -141,7 +143,13 @@ export function GamePhases({
         </div>
       )}
 
-      <ChatLog chatMessages={chatMessages} room={room} />
+      <ChatLog 
+        chatMessages={chatMessages} 
+        room={room} 
+        iAmJudge={iAmJudge} 
+        performAction={performAction} 
+        loadingAction={loadingAction} 
+      />
 
       <ActionPanel
         room={room}
@@ -154,6 +162,7 @@ export function GamePhases({
         setAnswerModalOpen={setAnswerModalOpen}
         loadingAction={loadingAction}
         performAction={performAction}
+        turnActionUsed={turnActionUsed}
       />
     </div>
   );

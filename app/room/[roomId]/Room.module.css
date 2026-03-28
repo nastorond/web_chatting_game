@@ -395,3 +395,27 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+.judgeActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.miniButton {
+  flex: 1;
+  padding: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 4px;
+  border: none;
+  background-color: #ef4444;
+  color: white;
+  cursor: pointer;
+}
+
+.buttonGroup {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

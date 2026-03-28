@@ -7,9 +7,19 @@ interface PlayerSidebarProps {
   room: RoomState | null;
   myPlayerId: string | null;
   visibleWords: { playerId: string; word: string | null }[];
+  iAmJudge: boolean;
+  performAction: (action: any) => Promise<void>;
+  loadingAction: boolean;
 }
 
-export function PlayerSidebar({ room, myPlayerId, visibleWords }: PlayerSidebarProps) {
+export function PlayerSidebar({ 
+  room, 
+  myPlayerId, 
+  visibleWords, 
+  iAmJudge, 
+  performAction, 
+  loadingAction 
+}: PlayerSidebarProps) {
   const currentTurnPlayer = room?.players[room.turnIndex];
 
   return (
@@ -41,7 +51,30 @@ export function PlayerSidebar({ room, myPlayerId, visibleWords }: PlayerSidebarP
                 )}
               </div>
               {p.wordSubmitted && <div style={{ fontSize: "0.7rem", color: "#10b981", marginTop: "4px" }}>단어 제출됨 ✓</div>}
+              {p.penaltyUntil && p.penaltyUntil > Date.now() && (
+                <div style={{ fontSize: "0.7rem", color: "#fbbf24", marginTop: "4px" }}>🔇 뮤트 중</div>
+              )}
               {!p.isAlive && <div style={{ fontSize: "0.7rem", color: "#ef4444", marginTop: "4px" }}>게임 종료 🏁</div>}
+              
+              {iAmJudge && !p.isJudge && p.isAlive && room?.status === "playing" && (
+                <div className={styles.judgeActions}>
+                  <button 
+                    onClick={() => performAction({ type: "judge_action", targetPlayerId: p.id, action: "warn" })}
+                    disabled={loadingAction}
+                    className={styles.miniButton}
+                  >
+                    ⚠️ 경고
+                  </button>
+                  <button 
+                    onClick={() => performAction({ type: "judge_action", targetPlayerId: p.id, action: "mute_30s" })}
+                    disabled={loadingAction}
+                    className={styles.miniButton}
+                    style={{ backgroundColor: "#94a3b8" }}
+                  >
+                    🔇 뮤트
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

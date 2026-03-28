@@ -100,11 +100,11 @@ function nextTurn(room: RoomState): RoomState {
 
     const p = players[newIndex];
     if (!p.isJudge && p.isAlive) {
-      return { ...room, turnIndex: newIndex, round };
+      return { ...room, turnIndex: newIndex, round, turnActionUsed: null };
     }
   }
 
-  return { ...room, turnIndex: newIndex, round };
+  return { ...room, turnIndex: newIndex, round, turnActionUsed: null };
 }
 
 // ─────────────────────────────────────────────
@@ -192,6 +192,53 @@ export async function leaveRoom(
   return { room: updated, messages };
 }
 
+export async function restartGame(
+  roomId: string,
+  judgeId: string
+): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
+  let room = await getRoom(roomId);
+  const judge = getPlayer(room, judgeId);
+
+  if (!judge.isJudge) {
+    throw new Error("심판만 게임을 재시작할 수 있습니다.");
+  }
+
+  if (room.status !== "finished") {
+    throw new Error("게임이 종료된 상태에서만 재시작할 수 있습니다.");
+  }
+
+  // 방 상태 초기화
+  const resetRoom: RoomState = {
+    ...room,
+    status: "waiting",
+    topic: null,
+    endCondition: null,
+    round: 0,
+    turnIndex: 0,
+    winnerPlayerId: null,
+    turnActionUsed: null,
+    players: room.players.map((p) => ({
+      ...p,
+      isAlive: true,
+      secretWord: null,
+      wordSubmitted: false,
+      penaltyUntil: undefined,
+    })),
+  };
+
+  await saveRoom(roomId, resetRoom);
+  await saveChatMessages(roomId, []); // 채팅 초기화
+  await addSystemMessage(roomId, "게임이 재시작되었습니다. 심판이 새 주제를 설정해주세요.");
+
+  return {
+    room: resetRoom,
+    messages: [
+      { type: "game_restarted" },
+      { type: "room_state", room: publicRoom(resetRoom) },
+    ],
+  };
+}
+
 // ─────────────────────────────────────────────
 // 게임 설정 및 액션
 // ─────────────────────────────────────────────
@@ -265,7 +312,7 @@ export async function submitWord(
     const firstTurnPlayer = nonJudge[0];
     const firstTurnIdx = updated.players.findIndex(p => p.id === firstTurnPlayer.id);
 
-    const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: firstTurnIdx };
+    const playing: RoomState = { ...updated, status: "playing", round: 1, turnIndex: firstTurnIdx, turnActionUsed: null };
     await saveRoom(roomId, playing);
 
     await addSystemMessage(roomId, `모든 단어 배정이 완료되었습니다. 게임을 시작합니다!`);
@@ -313,9 +360,19 @@ export async function postQuestion(
   text: string
 ): Promise<{ room: RoomState; messages: ServerToClientMessage[] }> {
   const room = await getRoom(roomId);
+  const player = getPlayer(room, playerId);
+
+  // 뮤트 상태 체크
+  if (player.penaltyUntil && player.penaltyUntil > Date.now()) {
+    throw new Error("채팅 금지 상태입니다. 질문할 수 없습니다.");
+  }
 
   if (room.players[room.turnIndex]?.id !== playerId) {
     throw new Error("현재 차례가 아닙니다.");
+  }
+
+  if (room.turnActionUsed) {
+    throw new Error("이번 턴에 이미 액션을 수행했습니다. (질문 또는 정답 시도는 턴당 1회만 가능)");
   }
 
   const messages = await getChatMessages(roomId);
@@ -329,7 +386,11 @@ export async function postQuestion(
   messages.push(msg);
   await saveChatMessages(roomId, messages);
 
-  return { room, messages: [{ type: "chat_posted", message: msg }] };
+  // 액션 사용 기록
+  const updatedRoom = { ...room, turnActionUsed: { playerId, actionType: "question" as const } };
+  await saveRoom(roomId, updatedRoom);
+
+  return { room: updatedRoom, messages: [{ type: "chat_posted", message: msg }] };
 }
 
 /** 정답 시도 핸들러 */
@@ -341,8 +402,17 @@ export async function postAnswer(
   let room = await getRoom(roomId);
   const player = getPlayer(room, playerId);
 
+  // 뮤트 상태 체크
+  if (player.penaltyUntil && player.penaltyUntil > Date.now()) {
+    throw new Error("채팅 금지 상태입니다. 정답 시도를 할 수 없습니다.");
+  }
+
   if (room.players[room.turnIndex]?.id !== playerId) {
     throw new Error("현재 차례가 아닙니다.");
+  }
+
+  if (room.turnActionUsed) {
+    throw new Error("이번 턴에 이미 액션을 수행했습니다. (질문 또는 정답 시도는 턴당 1회만 가능)");
   }
 
   // 채팅에 기록 (kind: answer)
@@ -385,6 +455,8 @@ export async function postAnswer(
     }
   }
 
+  // 액션 사용 기록
+  room.turnActionUsed = { playerId, actionType: "answer" as const };
   await saveRoom(roomId, room);
 
   return { room, messages: [{ type: "room_state", room: publicRoom(room) }] };

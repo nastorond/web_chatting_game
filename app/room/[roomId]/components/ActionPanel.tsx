@@ -14,6 +14,7 @@ interface ChatSystemProps {
   setAnswerModalOpen: (val: boolean) => void;
   loadingAction: boolean;
   performAction: (action: any) => Promise<void>;
+  turnActionUsed?: { playerId: string; actionType: "question" | "answer" } | null;
 }
 
 export function ActionPanel({
@@ -26,7 +27,8 @@ export function ActionPanel({
   setQuestionModalOpen,
   setAnswerModalOpen,
   loadingAction,
-  performAction
+  performAction,
+  turnActionUsed
 }: ChatSystemProps) {
   if (room?.status !== "playing") return null;
 
@@ -35,8 +37,21 @@ export function ActionPanel({
       {/* 턴 액션 버튼 */}
       {isMyTurn && !iAmJudge && (
         <div className={styles.turnButtonGroup}>
-          <button className={styles.actionButton} onClick={() => setQuestionModalOpen(true)}>질문하기</button>
-          <button className={styles.actionButton} style={{ backgroundColor: "#059669" }} onClick={() => setAnswerModalOpen(true)}>정답 시도하기</button>
+          <button 
+            className={styles.actionButton} 
+            onClick={() => setQuestionModalOpen(true)} 
+            disabled={loadingAction || !!turnActionUsed}
+          >
+            질문하기
+          </button>
+          <button 
+            className={styles.actionButton} 
+            style={{ backgroundColor: "#059669" }} 
+            onClick={() => setAnswerModalOpen(true)}
+            disabled={loadingAction || !!turnActionUsed}
+          >
+            정답 시도하기
+          </button>
           <button 
             className={styles.actionButton} 
             style={{ backgroundColor: "#475569" }} 
@@ -45,6 +60,11 @@ export function ActionPanel({
           >
             차례 넘기기
           </button>
+        </div>
+      )}
+      {isMyTurn && !iAmJudge && turnActionUsed && (
+        <div style={{ fontSize: "0.8rem", color: "#94a3b8", padding: "4px 8px", marginBottom: "8px" }}>
+          이번 턴에 {turnActionUsed.actionType === "question" ? "질문" : "정답 시도"}을 수행했습니다. 채팅 후 차례를 넘겨주세요.
         </div>
       )}
       {/* 자유 채팅 입력 */}

@@ -24,6 +24,7 @@ export interface RoomState {
   turnIndex: number;  // 현재 발언 차례인 플레이어의 index (players[] 내 인덱스)
   status: "waiting" | "word_submission" | "playing" | "finished";
   winnerPlayerId?: string | null; // 게임 종료 시 승리한 플레이어 ID
+  turnActionUsed?: { playerId: string; actionType: "question" | "answer" } | null; // 현재 턴에서 액션을 수행한 정보 (null이면 아직 미사용)
   createdAt: number;  // 생성 시점 (Unix MS)
 }
 
@@ -54,7 +55,8 @@ export type ClientToServerMessage =
   | { type: "end_turn" }
   | { type: "force_next_turn" }
   | { type: "guess_word"; text: string }
-  | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" };
+  | { type: "judge_action"; targetPlayerId: string; action: "warn" | "mute_30s" }
+  | { type: "restart_game" };
 
 // ─────────────────────────────────────────────
 // 서버 → 클라이언트 메시지
@@ -77,4 +79,5 @@ export type ServerToClientMessage =
     penaltyUntil?: number;
   }
   | { type: "game_over"; winnerId?: string }
+  | { type: "game_restarted" }
   | { type: "error"; message: string };
