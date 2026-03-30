@@ -1,3 +1,10 @@
+/**
+ * useGameRoom.ts
+ * 
+ * 특정 게임 방의 상태 관리, 실시간 업데이트(Polling), 그리고 서버와의 액션 통신을
+ * 담당하는 클라이언트 사이드 커스텀 훅입니다.
+ */
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -22,6 +29,7 @@ export function useGameRoom(roomIdStr: string) {
 
   const pollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /** 서버로부터 최신 게임 상태, 메시지 및 가시 단어 목록을 동기화합니다. */
   const fetchState = useCallback(async (playerId: string) => {
     try {
       const res = await fetch(`/api/room/${roomIdStr}/state?playerId=${playerId}`);
@@ -35,11 +43,13 @@ export function useGameRoom(roomIdStr: string) {
     }
   }, [roomIdStr]);
 
+  /** 주기적으로 fetchState를 호출하는 타이머를 시작합니다. (1초 간격) */
   const startPolling = useCallback((playerId: string) => {
     if (pollingTimer.current) clearInterval(pollingTimer.current);
     pollingTimer.current = setInterval(() => fetchState(playerId), 1000);
   }, [fetchState]);
 
+  /** 플레이어의 액션(채팅, 질문, 정답 제출 등)을 서버로 전송합니다. */
   const performAction = async (action: ClientToServerMessage) => {
     if (!myPlayerId) return;
     setLoadingAction(true);
@@ -53,10 +63,12 @@ export function useGameRoom(roomIdStr: string) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
+      // 액션 성공 시 즉시 상태 업데이트
       if (data.room) setRoom(data.room);
       if (data.chatMessages) setChatMessages(data.chatMessages);
       if (data.visibleWords) setVisibleWords(data.visibleWords);
       
+      // 서버로부터 받은 추가 메시지(ex: 정답 성공/실패 알림) 처리
       if (data.messages) {
         data.messages.forEach((msg: ServerToClientMessage) => {
           if (msg.type === "guess_result") {
@@ -72,13 +84,16 @@ export function useGameRoom(roomIdStr: string) {
     }
   };
 
+  /** 컴포넌트 마운트 시 초기 유저 인증 및 게임 입장을 수행합니다. */
   useEffect(() => {
+    // 닉네임이 없으면 홈으로 튕겨냄
     const nickname = localStorage.getItem("nickname");
     if (!nickname) {
       router.push("/");
       return;
     }
 
+    // 로컬 스토리지에 저장된 플레이어 ID를 확인하거나 새로 생성
     const playerIdKey = `playerId:${roomIdStr}`;
     let playerId = localStorage.getItem(playerIdKey);
     if (!playerId) {
@@ -89,6 +104,7 @@ export function useGameRoom(roomIdStr: string) {
 
     const initGame = async () => {
       try {
+        // 방에 동기화 요청
         const res = await fetch(`/api/room/${roomIdStr}/join`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -101,6 +117,8 @@ export function useGameRoom(roomIdStr: string) {
         setChatMessages(data.chatMessages || []);
         setVisibleWords(data.visibleWords || []);
         setLoading(false);
+
+        // 실시간 업데이트 시작
         startPolling(playerId);
       } catch (err: any) {
         setErrorBanner(`접속 오류: ${err.message}`);
@@ -111,6 +129,7 @@ export function useGameRoom(roomIdStr: string) {
     initGame();
 
     return () => {
+      // 컴포넌트 언마운트 시 폴링 타이머 정리
       if (pollingTimer.current) clearInterval(pollingTimer.current);
     };
   }, [roomIdStr, router, startPolling]);

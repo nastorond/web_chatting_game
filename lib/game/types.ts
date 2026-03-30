@@ -1,31 +1,37 @@
+/**
+ * types.ts
+ * 
+ * 게임에서 사용되는 모든 데이터 모델과 통신 메시지 규격을 정의한 타입 파일입니다.
+ */
+
 // ─────────────────────────────────────────────
-// 도메인 엔티티
+// 도메인 엔티티 (상태 모델)
 // ─────────────────────────────────────────────
 
 export interface Player {
-  id: string;
-  name: string;
-  isJudge: boolean;
-  isAlive: boolean;   // 플레이어가 자신의 단어를 올바르게 맞추면 false가 됨
-  secretWord: string | null; // 각 플레이어에게 할당된 비밀 단어 (본인은 모름)
-  wordSubmitted: boolean;    // 이 플레이어가 다음 사람의 단어를 제출했는지 여부
-  penaltyUntil?: number; // 침묵(Mute)이 종료되는 Unix MS 타임스탬프
+  id: string;        // 플레이어 고유 ID
+  name: string;      // 플레이어 닉네임
+  isJudge: boolean;  // 심판(진행자) 여부
+  isAlive: boolean;  // 생존 여부 (자신의 단어를 맞추면 false가 됨)
+  secretWord: string | null; // 할당된 비밀 단어 (본인은 알 수 없음)
+  wordSubmitted: boolean;    // 본인이 다음 사람을 위한 단어를 제출했는지 여부
+  penaltyUntil?: number;     // 제재(침묵)가 종료되는 타임스탬프 (ms)
 }
 
 export type EndCondition = "firstWin" | "lastLose";
 
 export interface RoomState {
   id: string;
-  hostId: string;
-  players: Player[];
-  topic: string | null;
-  endCondition: EndCondition | null;
-  round: number;
-  turnIndex: number;  // 현재 발언 차례인 플레이어의 index (players[] 내 인덱스)
-  status: "waiting" | "word_submission" | "playing" | "finished";
-  winnerPlayerId?: string | null; // 게임 종료 시 승리한 플레이어 ID
-  turnActionUsed?: { playerId: string; actionType: "question" | "answer" } | null; // 현재 턴에서 액션을 수행한 정보 (null이면 아직 미사용)
-  createdAt: number;  // 생성 시점 (Unix MS)
+  hostId: string;    // 방장(방 최초 생성자) ID
+  players: Player[]; // 참여 중인 모든 플레이어 목록
+  topic: string | null;         // 게임 대주제
+  endCondition: EndCondition | null; // 게임 종료 조건
+  round: number;     // 현재 라운드 수
+  turnIndex: number; // 현재 발언 중인 플레이어의 인덱스
+  status: "waiting" | "word_submission" | "playing" | "finished"; // 게임 상태
+  winnerPlayerId?: string | null; // 승리한 플레이어 ID (종료 시)
+  turnActionUsed?: { playerId: string; actionType: "question" | "answer" } | null; // 현재 턴에서 액션 사용 여부
+  createdAt: number; // 방 생성 시각
 }
 
 // ─────────────────────────────────────────────
@@ -34,14 +40,14 @@ export interface RoomState {
 
 export interface ChatMessage {
   id: string;
-  playerId: string;
-  text: string;
-  kind: "chat" | "system" | "guess" | "question" | "answer";
+  playerId: string; // 메시지를 보낸 사람 (시스템인 경우 "system")
+  text: string;     // 메시지 본문
+  kind: "chat" | "system" | "guess" | "question" | "answer"; // 메시지 종류
   timestamp: number;
 }
 
 // ─────────────────────────────────────────────
-// 클라이언트 → 서버 메시지
+// 클라이언트 → 서버 메시지 (요청)
 // ─────────────────────────────────────────────
 
 export type ClientToServerMessage =
@@ -59,7 +65,7 @@ export type ClientToServerMessage =
   | { type: "restart_game" };
 
 // ─────────────────────────────────────────────
-// 서버 → 클라이언트 메시지
+// 서버 → 클라이언트 메시지 (응답/알림)
 // ─────────────────────────────────────────────
 
 export type ServerToClientMessage =

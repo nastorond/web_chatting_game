@@ -1,17 +1,20 @@
+/**
+ * LobbyPage (app/page.tsx)
+ * 
+ * 게임의 진입점인 로비 화면입니다.
+ * 사용자는 여기서 자신의 닉네임을 설정하고, 새로운 방을 생성하거나
+ * 기존 방 ID를 입력하여 게임에 참여할 수 있습니다.
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-// 유니크한 방 ID를 생성하는 유틸리티
+/** 새로운 게임 방 ID(7자리 랜덤 문자열)를 생성합니다. */
 function generateRoomId(): string {
   return Math.random().toString(36).substring(2, 9).toUpperCase();
 }
-
-/**
- * 로비 페이지 (app/page.tsx)
- * 닉네임을 입력하고 방을 생성하거나 기존 방에 참가하는 데 사용됩니다.
- */
 export default function LobbyPage() {
   const router = useRouter();
   const [nickname, setNickname] = useState("");
@@ -29,6 +32,7 @@ export default function LobbyPage() {
     setNickname(e.target.value);
   };
 
+  /** 닉네임 유효성 검사 및 로컬 스토리지 저장 */
   const validateNickname = (): boolean => {
     if (!nickname.trim()) {
       alert("닉네임을 입력해주세요!");
@@ -38,12 +42,14 @@ export default function LobbyPage() {
     return true;
   };
 
+  /** 새로운 랜덤 방을 생성하고 이동합니다. */
   const createRandomRoom = () => {
     if (!validateNickname()) return;
     const roomId = generateRoomId();
     router.push(`/room/${roomId}`);
   };
 
+  /** 입력한 방 ID로 입장을 시도합니다. */
   const joinExistingRoom = () => {
     if (!validateNickname()) return;
     if (!roomIdInput.trim()) {

@@ -1,9 +1,16 @@
+/**
+ * join/route.ts
+ * 
+ * 플레이어가 특정 방에 입장할 때 호출되는 API입니다.
+ * 플레이어 정보를 등록하고, 현재 방의 최신 상태 및 채팅 기록을 반환합니다.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import * as roomManager from "@/lib/game/roomManager";
 
 /**
  * [POST] /api/room/[roomId]/join
- * 플레이어 ID와 닉네임을 사용해 방에 입장합니다.
+ * 플레이어 ID와 닉네임을 사용해 방에 입장 처리합니다.
  */
 export async function POST(
   req: NextRequest,
@@ -20,11 +27,11 @@ export async function POST(
       );
     }
 
-    // roomManager를 통해 방 입장 처리
+    // roomManager를 통해 비즈니스 로직(입장 처리) 수행
     const { messages } = await roomManager.joinRoom(roomId, playerId, name);
-    const room = await roomManager.getPublicRoom(roomId);
 
-    // 이 방의 모든 채팅 메시지 및 가시 단어 목록 가져오기
+    // 입장 후의 최신 방 상태 및 데이터 조회
+    const room = await roomManager.getPublicRoom(roomId);
     const chatMessages = await roomManager.getRoomChatMessages(roomId);
     const visibleWords = await roomManager.getVisibleWords(roomId, playerId);
 
@@ -35,6 +42,7 @@ export async function POST(
       messages,
     });
   } catch (error: any) {
+    console.error("Join API Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

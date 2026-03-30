@@ -1,3 +1,11 @@
+/**
+ * GameRoomPage (page.tsx)
+ * 
+ * 실제 게임이 진행되는 메인 컴포넌트입니다.
+ * 하위 컴포넌트들을 조립하고, 게임의 각 단계(대기, 단어 제출, 게임 진행)에 따른
+ * 로직을 조절하며 상태를 관리합니다.
+ */
+
 "use client";
 
 import { useState } from "react";
@@ -13,6 +21,7 @@ export default function GameRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const roomIdStr = Array.isArray(roomId) ? roomId[0] : roomId;
 
+  // 게임 상태 및 통신을 관장하는 커스텀 훅 사용
   const {
     room,
     chatMessages,
@@ -25,7 +34,7 @@ export default function GameRoomPage() {
     performAction,
   } = useGameRoom(roomIdStr);
 
-  // 로컬 컴포넌트 전용 상태 (입력값 등)
+  // 화면 하단 메시지 입력 및 모달 제어 상태
   const [topicInput, setTopicInput] = useState("");
   const [wordInput, setWordInput] = useState("");
   const [chatInput, setChatInput] = useState("");
@@ -37,16 +46,19 @@ export default function GameRoomPage() {
 
   if (loading) return <div className={styles.fullscreenCenter}>접속 중...</div>;
 
+  // 내 정보 및 현재 턴 정보 계산
   const me = room?.players.find((p) => p.id === myPlayerId);
   const iAmJudge = !!me?.isJudge;
   const currentTurnPlayer = room?.players[room.turnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
 
+  // 단어 배정 순서 계산 (자신의 다음 플레이어 찾기)
   const nonJudgePlayers = room ? room.players.filter(p => !p.isJudge) : [];
   const myIndexInNonJudge = room && myPlayerId ? nonJudgePlayers.findIndex(p => p.id === myPlayerId) : -1;
   const targetForWordAssign = room && myIndexInNonJudge !== -1 ? nonJudgePlayers[(myIndexInNonJudge + 1) % nonJudgePlayers.length] : null;
 
   // 핸들러들
+  // 주제 설정 및 게임 시작 (심판 전용)
   const handleStartGame = () => {
     if (!topicInput) {
       setErrorBanner("주제를 입력해주세요.");
@@ -55,6 +67,7 @@ export default function GameRoomPage() {
     performAction({ type: "set_topic_and_rule", topic: topicInput, endCondition: "firstWin" });
   };
 
+  // 단어 제출 핸들러
   const handleSubmitWord = (forPlayerId: string) => {
     if (!wordInput) {
       setErrorBanner("단어를 입력해주세요.");
@@ -64,6 +77,7 @@ export default function GameRoomPage() {
     setWordInput("");
   };
 
+  // 채팅 전송
   const handleSendChat = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!chatInput.trim()) return;
@@ -71,6 +85,7 @@ export default function GameRoomPage() {
     setChatInput("");
   };
 
+  // 질문 수행 (모달 연동)
   const handlePostQuestion = () => {
     if (!questionText.trim()) return;
     performAction({ type: "post_question", text: questionText });
@@ -78,6 +93,7 @@ export default function GameRoomPage() {
     setQuestionModalOpen(false);
   };
 
+  // 정답 제출 (모달 연동)
   const handlePostAnswer = () => {
     if (!answerText.trim()) return;
     performAction({ type: "post_answer", text: answerText });

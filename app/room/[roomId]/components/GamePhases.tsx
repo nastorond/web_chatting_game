@@ -1,3 +1,10 @@
+/**
+ * GamePhases.tsx
+ * 
+ * 게임의 진행 상태(대기, 단어 제출, 플레이 중)에 따라 
+ * 서로 다른 UI 레이아웃을 전환하며 렌더링하는 중계 컴포넌트입니다.
+ */
+
 "use client";
 
 import { RoomState, Player } from "@/lib/game/types";
@@ -53,6 +60,7 @@ export function GamePhases({
   turnActionUsed
 }: PhaseProps) {
   
+  // 1. 대기 단계 (waiting): 심판이 주제를 정하고 게임을 시작하기 전
   if (room.status === "waiting") {
     return (
       <div className={styles.centerBox}>
@@ -67,7 +75,7 @@ export function GamePhases({
               onChange={(e) => setTopicInput(e.target.value)}
             />
             <select className={styles.select} disabled>
-              <option value="firstWin">종합 승리 모드 (firstWin)</option>
+              <option value="firstWin">최초 승자 모드 (먼저 맞추면 승리)</option>
             </select>
             <button className={styles.button} onClick={handleStartGame} disabled={loadingAction}>
               {loadingAction ? "시작 중..." : "게임 시작"}
@@ -80,11 +88,12 @@ export function GamePhases({
     );
   }
 
+  // 2. 단어 제출 단계 (word_submission): 플레이어들이 서로에게 줄 단어를 입력하는 단계
   if (room.status === "word_submission") {
     return (
       <div className={styles.centerBox}>
         <div className={styles.setupCard}>
-          <h2>📝 단어 배정 단계</h2>
+          <h2>📝 단어 제출 단계</h2>
           {iAmJudge ? (
             <div className={styles.infoText}>
               진행자(심판)는 단어를 제출하지 않습니다.<br/>
@@ -121,6 +130,8 @@ export function GamePhases({
     );
   }
 
+  // 3. 플레이 중 (playing) 및 종료 단계 (finished)
+  // 공통적으로 채팅 로그와 액션 패널을 포함하는 메인 게임 레이아웃을 사용합니다.
   return (
     <div className={styles.gameArea}>
       {room.status === "playing" && (
@@ -137,12 +148,13 @@ export function GamePhases({
               onClick={() => performAction({ type: "force_next_turn" })}
               disabled={loadingAction}
             >
-              강제 넘기기 ⏩
+              차례 강제 넘기기 ⏩
             </button>
           )}
         </div>
       )}
 
+      {/* 실시간 채팅 및 시스템 로그 출력 영역 */}
       <ChatLog 
         chatMessages={chatMessages} 
         room={room} 
@@ -151,6 +163,7 @@ export function GamePhases({
         loadingAction={loadingAction} 
       />
 
+      {/* 하단 입력 및 액션 제어 영역 */}
       <ActionPanel
         room={room}
         isMyTurn={isMyTurn}
