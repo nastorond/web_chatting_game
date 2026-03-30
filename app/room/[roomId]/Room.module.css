@@ -137,7 +137,7 @@
   font-weight: 600;
 }
 
-/* 설정 창 및 안내 문구 중앙 박스 */
+/* 설정 창 및 안내 문구 중앙 박스 (가운데 정렬) */
 .centerBox {
   flex: 1;
   display: flex;
@@ -169,7 +169,7 @@
   font-weight: 600;
 }
 
-/* 게임 진행 영역 */
+/* 게임 진행 영역 전체 컨테이너 */
 .gameArea {
   flex: 1;
   display: flex;
@@ -177,11 +177,55 @@
   overflow: hidden;
 }
 
+/* 게임 상단 영역 (대기/라운드 정보 등) */
+.gameAreaTop {
+  flex-shrink: 0;
+  border-bottom: 1px solid #334155;
+  background-color: #1e293b;
+}
+
+/* 게임 하단 영역 (채팅 및 메모장) */
+.lowerArea {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* 채팅 영역 컨테이너 */
+.chatWrapper {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #334155;
+  overflow: hidden;
+}
+
+/* 메모장 영역 컨테이너 */
+.notepadWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #111827;
+  overflow: hidden;
+}
+
+/* 메모장 헤더 */
+.notepadHeader {
+  padding: 12px 16px;
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 라운드 및 차례 정보 바 */
 .turnInfo {
   padding: 12px 24px;
-  background-color: #1e293b;
-  border-bottom: 1px solid #334155;
   display: flex;
   align-items: center;
 }
