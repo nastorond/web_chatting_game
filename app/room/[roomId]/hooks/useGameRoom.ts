@@ -16,6 +16,8 @@ import {
   ChatMessage,
 } from "@/lib/game/types";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
 export function useGameRoom(roomIdStr: string) {
   const router = useRouter();
 
@@ -32,7 +34,7 @@ export function useGameRoom(roomIdStr: string) {
   /** 서버로부터 최신 게임 상태, 메시지 및 가시 단어 목록을 동기화합니다. */
   const fetchState = useCallback(async (playerId: string) => {
     try {
-      const res = await fetch(`/api/room/${roomIdStr}/state?playerId=${playerId}`);
+      const res = await fetch(`${API_BASE}/api/room/${roomIdStr}/state?playerId=${playerId}`);
       if (!res.ok) return;
       const data = await res.json();
       if (data.room) setRoom(data.room);
@@ -55,7 +57,7 @@ export function useGameRoom(roomIdStr: string) {
     setLoadingAction(true);
     setErrorBanner(null);
     try {
-      const res = await fetch(`/api/room/${roomIdStr}/action`, {
+      const res = await fetch(`${API_BASE}/api/room/${roomIdStr}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId: myPlayerId, action }),
@@ -105,7 +107,7 @@ export function useGameRoom(roomIdStr: string) {
     const initGame = async () => {
       try {
         // 방에 동기화 요청
-        const res = await fetch(`/api/room/${roomIdStr}/join`, {
+        const res = await fetch(`${API_BASE}/api/room/${roomIdStr}/join`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ playerId, name: nickname }),

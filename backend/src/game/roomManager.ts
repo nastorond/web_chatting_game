@@ -13,7 +13,7 @@ import {
   EndCondition,
   ServerToClientMessage,
 } from "./types";
-import { redis } from "@/lib/redis";
+import { redis } from "../lib/redis";
 
 // ─────────────────────────────────────────────
 // Redis 키 및 TTL(Time-To-Live) 설정
@@ -24,13 +24,14 @@ const FINISHED_ROOM_TTL = 300;  // 종료된 방: 5분 후 삭제 (결과 확인
 
 /** Redis에서 특정 방의 상태를 가져옵니다. */
 async function getRoomFromRedis(roomId: string): Promise<RoomState | null> {
-  return await redis.get<RoomState>(`room:${roomId}`);
+  const raw = await redis.get(`room:${roomId}`);
+  return raw ? (JSON.parse(raw) as RoomState) : null;
 }
 
 /** Redis에 방 상태를 저장합니다. 방의 상태에 따라 TTL을 다르게 설정합니다. */
 async function saveRoom(roomId: string, room: RoomState): Promise<void> {
   const ttl = room.status === "finished" ? FINISHED_ROOM_TTL : ROOM_TTL;
-  await redis.set(`room:${roomId}`, room, { ex: ttl });
+  await redis.set(`room:${roomId}`, JSON.stringify(room), "EX", ttl);
 }
 
 /** 방 관련 데이터(상태 및 채팅)를 Redis에서 삭제합니다. */
@@ -40,7 +41,8 @@ async function deleteRoom(roomId: string): Promise<void> {
 
 /** Redis에서 해당 방의 채팅 메시지 목록을 가져옵니다. */
 async function getChatMessages(roomId: string): Promise<ChatMessage[]> {
-  return (await redis.get<ChatMessage[]>(`chat:${roomId}`)) || [];
+  const raw = await redis.get(`chat:${roomId}`);
+  return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
 }
 
 /** 채팅 메시지를 Redis에 저장합니다. 최근 200개까지만 유지합니다. */
@@ -48,7 +50,7 @@ async function saveChatMessages(roomId: string, messages: ChatMessage[]): Promis
   const trimmed = messages.slice(-200); 
   const room = await getRoomFromRedis(roomId);
   const ttl = room?.status === "finished" ? FINISHED_ROOM_TTL : ROOM_TTL;
-  await redis.set(`chat:${roomId}`, trimmed, { ex: ttl });
+  await redis.set(`chat:${roomId}`, JSON.stringify(trimmed), "EX", ttl);
 }
 
 // ─────────────────────────────────────────────

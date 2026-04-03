@@ -9,11 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@upstash/redis": "^1.37.0",
     "next": "16.2.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "ws": "^8.20.0"
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@types/node": "^20",
