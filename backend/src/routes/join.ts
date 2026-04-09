@@ -1,5 +1,6 @@
 import { Router } from "express";
-import * as roomManager from "../game/roomManager";
+import { joinRoom, getPublicRoom, getVisibleWords } from "../game/roomService";
+import { getRoomChatMessages } from "../game/chatService";
 
 const router = Router();
 
@@ -12,11 +13,11 @@ router.post("/api/room/:roomId/join", async (req, res) => {
       return res.status(400).json({ error: "playerId와 name이 필요합니다." });
     }
 
-    await roomManager.joinRoom(roomId, playerId, name);
+    await joinRoom(roomId, playerId, name);
 
-    const room = await roomManager.getPublicRoom(roomId);
-    const chatMessages = await roomManager.getRoomChatMessages(roomId);
-    const visibleWords = await roomManager.getVisibleWords(roomId, playerId);
+    const room = await getPublicRoom(roomId);
+    const chatMessages = await getRoomChatMessages(roomId);
+    const visibleWords = await getVisibleWords(roomId, playerId);
 
     return res.json({ room, chatMessages, visibleWords });
   } catch (error: any) {

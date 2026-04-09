@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { getPublicRoom, getRoomChatMessages, getVisibleWords } from "../game/roomManager";
+import { getPublicRoom, getVisibleWords } from "../game/roomService";
+import { getRoomChatMessages } from "../game/chatService";
 
 const router = Router();
 
