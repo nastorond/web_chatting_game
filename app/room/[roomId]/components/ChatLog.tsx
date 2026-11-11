@@ -58,7 +58,7 @@ export function ChatLog({ chatMessages, room, iAmJudge, performAction, loadingAc
           {/* 시스템 메시지나 정답 결과가 아닌 경우 닉네임 표시 */}
           {msg.kind !== "system" && msg.kind !== "guess" && (
             <span className={styles.chatAuthor}>
-              {room.players.find(p => p.id === msg.playerId)?.name || "Unknown"}:
+              {room.players.find(p => p.id === msg.playerId)?.name || msg.name || "Unknown"}:
             </span>
           )}
           <span className={styles.chatText}>{msg.text}</span>
@@ -71,6 +71,9 @@ export function ChatLog({ chatMessages, room, iAmJudge, performAction, loadingAc
           <h2>🏁 게임 종료</h2>
           {room.winnerPlayerId && (
             <p>최종 승자: <strong>{room.players.find(p => p.id === room.winnerPlayerId)?.name}</strong></p>
+          )}
+          {room.loserPlayerId && (
+            <p>패배: <strong>{room.players.find(p => p.id === room.loserPlayerId)?.name}</strong></p>
           )}
           <div className={styles.buttonGroup}>
             {/* 심판(진행자)만 게임을 재시작할 수 있습니다. */}

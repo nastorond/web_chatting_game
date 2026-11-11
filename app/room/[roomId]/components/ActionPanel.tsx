@@ -8,6 +8,7 @@
 "use client";
 
 import { RoomState } from "@/lib/game/types";
+import { LIMITS } from "@/lib/game/limits";
 import styles from "../Room.module.css";
 
 interface ChatSystemProps {
@@ -99,6 +100,7 @@ export function ActionPanel({
           style={{ flex: 1, margin: 0 }}
           placeholder="자유롭게 채팅하세요 (질문/답변은 버튼 클릭)"
           value={chatInput}
+          maxLength={LIMITS.CHAT_MAX}
           onChange={(e) => setChatInput(e.target.value)}
           disabled={loadingAction}
         />

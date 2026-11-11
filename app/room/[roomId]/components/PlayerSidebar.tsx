@@ -48,6 +48,9 @@ export function PlayerSidebar({
               <div className={styles.playerName}>
                 {active && <span style={{ marginRight: "4px" }}>▶</span>}
                 {p.name} {p.id === myPlayerId && "(나)"} {p.isJudge && "⚖️"}
+                {p.isOnline === false && (
+                  <span style={{ marginLeft: "6px", fontSize: "0.7rem", color: "#64748b" }}>(연결 끊김)</span>
+                )}
               </div>
               
               {/* 비밀 단어 표시 (심판 혹은 다른 플레이어의 단어만 보임) */}
@@ -68,7 +71,7 @@ export function PlayerSidebar({
               {p.penaltyUntil && p.penaltyUntil > Date.now() && (
                 <div style={{ fontSize: "0.7rem", color: "#fbbf24", marginTop: "4px" }}>🔇 뮤트 중</div>
               )}
-              {!p.isAlive && <div style={{ fontSize: "0.7rem", color: "#ef4444", marginTop: "4px" }}>정답 맞춤! 🏁</div>}
+              {!p.isAlive && !p.isJudge && <div style={{ fontSize: "0.7rem", color: "#ef4444", marginTop: "4px" }}>정답 맞춤! 🏁</div>}
               
               {/* 심판 전용 제재 기능 (플레이 중일 때만 가능) */}
               {iAmJudge && !p.isJudge && p.isAlive && room?.status === "playing" && (

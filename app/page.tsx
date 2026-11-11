@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { LIMITS } from "@/lib/game/limits";
 
 /** 새로운 게임 방 ID(7자리 랜덤 문자열)를 생성합니다. */
 function generateRoomId(): string {
@@ -52,11 +53,16 @@ export default function LobbyPage() {
   /** 입력한 방 ID로 입장을 시도합니다. */
   const joinExistingRoom = () => {
     if (!validateNickname()) return;
-    if (!roomIdInput.trim()) {
+    const roomId = roomIdInput.trim().toUpperCase();
+    if (!roomId) {
       alert("방 ID를 입력해주세요!");
       return;
     }
-    router.push(`/room/${roomIdInput.trim().toUpperCase()}`);
+    if (!/^[A-Z0-9_-]+$/.test(roomId)) {
+      alert("방 ID는 영문, 숫자, -, _ 만 사용할 수 있습니다.");
+      return;
+    }
+    router.push(`/room/${roomId}`);
   };
 
   return (
@@ -73,6 +79,7 @@ export default function LobbyPage() {
               type="text"
               placeholder="멋진 이름을 지어주세요"
               value={nickname}
+              maxLength={LIMITS.NAME_MAX}
               onChange={handleNicknameChange}
             />
           </div>
@@ -94,6 +101,7 @@ export default function LobbyPage() {
                 type="text"
                 placeholder="방 ID (예: X4Y2Z1)"
                 value={roomIdInput}
+                maxLength={LIMITS.ROOM_ID_MAX}
                 onChange={(e) => setRoomIdInput(e.target.value)}
               />
               <button style={styles.buttonSecondary} onClick={joinExistingRoom}>

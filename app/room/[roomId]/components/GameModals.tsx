@@ -19,10 +19,11 @@ interface ModalProps {
   onCancel: () => void;  // 취소 시 콜백
   submitLabel: string;   // 확인 버튼 라벨
   isTextArea?: boolean;  // 텍스트 영역(textarea) 사용 여부
+  maxLength?: number;    // 최대 입력 길이
 }
 
 /** 재사용 가능한 기본 모달 컴포넌트 */
-function Modal({ isOpen, title, description, value, setValue, onSubmit, onCancel, submitLabel, isTextArea }: ModalProps) {
+function Modal({ isOpen, title, description, value, setValue, onSubmit, onCancel, submitLabel, isTextArea, maxLength }: ModalProps) {
   if (!isOpen) return null;
   return (
     <div className={styles.modalOverlay}>
@@ -34,6 +35,7 @@ function Modal({ isOpen, title, description, value, setValue, onSubmit, onCancel
             className={styles.textarea}
             placeholder="내용을 입력하세요..."
             value={value}
+            maxLength={maxLength}
             onChange={(e) => setValue(e.target.value)}
           />
         ) : (
@@ -41,7 +43,9 @@ function Modal({ isOpen, title, description, value, setValue, onSubmit, onCancel
             className={styles.input}
             placeholder="내용을 입력하세요..."
             value={value}
+            maxLength={maxLength}
             onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) onSubmit(); }}
           />
         )}
         <div className={styles.modalButtons}>
@@ -65,6 +69,8 @@ export function GameModals({
   answerText,
   setAnswerText,
   handlePostAnswer,
+  questionMaxLength,
+  answerMaxLength,
 }: any) {
   return (
     <>
@@ -79,6 +85,7 @@ export function GameModals({
         onCancel={() => setQuestionModalOpen(false)}
         submitLabel="질문 전송"
         isTextArea
+        maxLength={questionMaxLength}
       />
       
       {/* 정답 제출 모달: 플레이어가 자신의 단어를 확신할 때 사용 */}
@@ -91,6 +98,7 @@ export function GameModals({
         onSubmit={handlePostAnswer}
         onCancel={() => setAnswerModalOpen(false)}
         submitLabel="정답 시도"
+        maxLength={answerMaxLength}
       />
     </>
   );

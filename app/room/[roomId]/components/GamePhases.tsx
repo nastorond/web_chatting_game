@@ -8,7 +8,8 @@
 "use client";
 
 import { useState } from "react";
-import { RoomState, Player } from "@/lib/game/types";
+import { RoomState, Player, EndCondition } from "@/lib/game/types";
+import { LIMITS } from "@/lib/game/limits";
 import styles from "../Room.module.css";
 import { ChatLog } from "./ChatLog";
 import { ActionPanel } from "./ActionPanel";
@@ -21,6 +22,8 @@ interface PhaseProps {
   loadingAction: boolean;
   topicInput: string;
   setTopicInput: (v: string) => void;
+  endConditionInput: EndCondition;
+  setEndConditionInput: (v: EndCondition) => void;
   wordInput: string;
   setWordInput: (v: string) => void;
   handleStartGame: () => void;
@@ -45,6 +48,8 @@ export function GamePhases({
   loadingAction,
   topicInput,
   setTopicInput,
+  endConditionInput,
+  setEndConditionInput,
   wordInput,
   setWordInput,
   handleStartGame,
@@ -65,6 +70,10 @@ export function GamePhases({
   // 메모장 열기/닫기 상태 (로컬 클라이언트 전용)
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
 
+  // 심판을 제외한 플레이어 수 (게임 시작 가능 여부 판단)
+  const nonJudgeCount = room.players.filter((p) => !p.isJudge).length;
+  const canStart = nonJudgeCount >= LIMITS.MIN_PLAYERS;
+
   return (
     <div className={styles.gameArea}>
       
@@ -82,13 +91,25 @@ export function GamePhases({
                   className={styles.input}
                   placeholder="예: 동물, 영화 제목, 브랜드명..."
                   value={topicInput}
+                  maxLength={LIMITS.TOPIC_MAX}
                   onChange={(e) => setTopicInput(e.target.value)}
                   style={{ marginBottom: "12px" }}
                 />
-                <select className={styles.select} disabled style={{ width: "100%", marginBottom: "12px" }}>
+                <select
+                  className={styles.select}
+                  value={endConditionInput}
+                  onChange={(e) => setEndConditionInput(e.target.value as EndCondition)}
+                  style={{ width: "100%", marginBottom: "12px" }}
+                >
                   <option value="firstWin">최초 승자 모드 (먼저 맞추면 승리)</option>
+                  <option value="lastLose">꼴찌 패배 모드 (마지막까지 못 맞춘 사람이 패배)</option>
                 </select>
-                <button className={styles.button} onClick={handleStartGame} disabled={loadingAction}>
+                {!canStart && (
+                  <p style={{ color: "#fbbf24", fontSize: "0.85rem", marginBottom: "12px" }}>
+                    심판을 제외한 플레이어가 최소 {LIMITS.MIN_PLAYERS}명 필요합니다. (현재 {nonJudgeCount}명)
+                  </p>
+                )}
+                <button className={styles.button} onClick={handleStartGame} disabled={loadingAction || !canStart}>
                   {loadingAction ? "시작 중..." : "게임 시작"}
                 </button>
               </div>
@@ -110,7 +131,12 @@ export function GamePhases({
                 </div>
               ) : (
                 <>
-                  <p>배정할 단어를 입력해주세요.<br/><small style={{ color: "#94a3b8" }}>(서버가 자동으로 다른 플레이어에게 할당합니다.)</small></p>
+                  <p>
+                    배정할 단어를 입력해주세요.<br/>
+                    <small style={{ color: "#94a3b8" }}>
+                      ({targetForWordAssign ? `${targetForWordAssign.name}님에게 전달됩니다.` : "다음 순서 플레이어에게 전달됩니다."})
+                    </small>
+                  </p>
                   {me?.wordSubmitted ? (
                     <div className={styles.successText}>
                       단어를 제출했습니다. 다른 플레이어들이 완료할 때까지 기다려주세요.
@@ -121,6 +147,7 @@ export function GamePhases({
                         className={styles.input}
                         placeholder="배정할 단어 입력"
                         value={wordInput}
+                        maxLength={LIMITS.WORD_MAX}
                         onChange={(e) => setWordInput(e.target.value)}
                         style={{ marginBottom: "12px" }}
                       />

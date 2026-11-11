@@ -1,7 +1,8 @@
 /**
  * types.ts
- * 
+ *
  * 게임에서 사용되는 모든 데이터 모델과 통신 메시지 규격을 정의한 타입 파일입니다.
+ * (프론트엔드의 lib/game/types.ts 와 동일하게 유지해야 합니다.)
  */
 
 // ─────────────────────────────────────────────
@@ -16,20 +17,22 @@ export interface Player {
   secretWord: string | null; // 할당된 비밀 단어 (본인은 알 수 없음)
   wordSubmitted: boolean;    // 본인이 다음 사람을 위한 단어를 제출했는지 여부
   penaltyUntil?: number;     // 제재(침묵)가 종료되는 타임스탬프 (ms)
+  isOnline?: boolean;        // 접속 여부 (서버 응답 시점에 계산되며 저장되지 않음)
 }
 
 export type EndCondition = "firstWin" | "lastLose";
 
 export interface RoomState {
   id: string;
-  hostId: string;    // 방장(방 최초 생성자) ID
+  hostId: string;    // 방장 ID (항상 현재 심판과 동일하게 유지)
   players: Player[]; // 참여 중인 모든 플레이어 목록
   topic: string | null;         // 게임 대주제
   endCondition: EndCondition | null; // 게임 종료 조건
   round: number;     // 현재 라운드 수
   turnIndex: number; // 현재 발언 중인 플레이어의 인덱스
   status: "waiting" | "word_submission" | "playing" | "finished"; // 게임 상태
-  winnerPlayerId?: string | null; // 승리한 플레이어 ID (종료 시)
+  winnerPlayerId?: string | null; // 승리한 플레이어 ID (firstWin 모드 종료 시)
+  loserPlayerId?: string | null;  // 패배한 플레이어 ID (lastLose 모드 종료 시)
   turnActionUsed?: { playerId: string; actionType: "question" | "answer" } | null; // 현재 턴에서 액션 사용 여부
   createdAt: number; // 방 생성 시각
 }
@@ -41,6 +44,7 @@ export interface RoomState {
 export interface ChatMessage {
   id: string;
   playerId: string; // 메시지를 보낸 사람 (시스템인 경우 "system")
+  name?: string;    // 보낸 시점의 닉네임 (퇴장한 플레이어의 메시지 표시용)
   text: string;     // 메시지 본문
   kind: "chat" | "system" | "guess" | "question" | "answer"; // 메시지 종류
   timestamp: number;
@@ -87,3 +91,27 @@ export type ServerToClientMessage =
   | { type: "game_over"; winnerId?: string }
   | { type: "game_restarted" }
   | { type: "error"; message: string };
+
+// ─────────────────────────────────────────────
+// API 응답
+// ─────────────────────────────────────────────
+
+/** join / state / action 응답에 공통으로 포함되는 방 스냅샷 */
+export interface RoomSnapshotResponse {
+  room: RoomState | null;
+  chatMessages: ChatMessage[];
+  visibleWords: { playerId: string; word: string | null }[];
+  version: number; // 방 상태 버전 (클라이언트가 오래된 응답을 무시하는 데 사용)
+}
+
+/** 에러 응답의 code 값 */
+export type ApiErrorCode =
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "NOT_IN_ROOM"
+  | "ROOM_NOT_FOUND"
+  | "GAME_IN_PROGRESS"
+  | "ROOM_FULL"
+  | "FORBIDDEN"
+  | "INVALID_STATE"
+  | "INTERNAL";
