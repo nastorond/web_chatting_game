@@ -5,8 +5,8 @@
  */
 
 import { badRequest } from "./errors";
-import { LIMITS } from "./limits";
-import { EndCondition } from "./types";
+import { LIMITS } from "@/lib/game/limits";
+import { EndCondition } from "@/lib/game/types";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 

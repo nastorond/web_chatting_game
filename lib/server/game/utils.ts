@@ -5,7 +5,7 @@
  */
 
 import { randomBytes } from "crypto";
-import { RoomState, Player } from "./types";
+import { RoomState, Player } from "@/lib/game/types";
 import { getRoomFromRedis } from "./store";
 import { GameError } from "./errors";
 

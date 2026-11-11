@@ -6,7 +6,7 @@
  */
 
 import { timingSafeEqual } from "crypto";
-import { RoomState, Player, ServerToClientMessage, RoomSnapshotResponse } from "./types";
+import { RoomState, Player, ServerToClientMessage, RoomSnapshotResponse } from "@/lib/game/types";
 import {
   getRoomFromRedis,
   saveRoom,
@@ -21,7 +21,7 @@ import { publicRoom, generateToken } from "./utils";
 import { normalizeRoom, removePlayers } from "./rules";
 import { addSystemMessage } from "./chatService";
 import { GameError } from "./errors";
-import { LIMITS } from "./limits";
+import { LIMITS } from "@/lib/game/limits";
 
 // ─── 인증 ───────────────────────────────────────
 
@@ -37,7 +37,6 @@ export async function authenticate(roomId: string, playerId: string, token: stri
   if (!stored || !token || !sameToken(stored, token)) {
     throw new GameError("인증 정보가 올바르지 않습니다. 다시 입장해주세요.", 401, "UNAUTHORIZED");
   }
-  await markSeen(roomId, playerId);
 }
 
 // ─── 입장 / 퇴장 ─────────────────────────────────
@@ -166,9 +165,16 @@ export async function leaveRoom(
 
 // ─── 스냅샷 ─────────────────────────────────────
 
-/** 특정 플레이어 시점에서 본 방 상태 (본인의 비밀 단어는 숨김) */
-export async function getRoomSnapshot(roomId: string, viewerPlayerId: string): Promise<RoomSnapshotResponse> {
-  const snap = await getSnapshot(roomId);
+/**
+ * 특정 플레이어 시점에서 본 방 상태 (본인의 비밀 단어는 숨김)
+ * markSeen 이면 같은 Redis 요청에서 그 플레이어의 접속 시각도 갱신합니다.
+ */
+export async function getRoomSnapshot(
+  roomId: string,
+  viewerPlayerId: string,
+  opts: { markSeen?: boolean } = {}
+): Promise<RoomSnapshotResponse> {
+  const snap = await getSnapshot(roomId, opts.markSeen ? viewerPlayerId : undefined);
   if (!snap.room) throw new GameError("방을 찾을 수 없습니다.", 404, "ROOM_NOT_FOUND");
 
   return {

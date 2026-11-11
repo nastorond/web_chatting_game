@@ -5,13 +5,13 @@
  * 모든 함수는 라우터에서 withRoomLock 안에서 호출되어야 합니다.
  */
 
-import { RoomState, ServerToClientMessage } from "./types";
+import { RoomState, ServerToClientMessage } from "@/lib/game/types";
 import { saveRoom, clearChat } from "./store";
 import { getRoom, getPlayer, publicRoom } from "./utils";
 import { resetToWaiting, startPlayingIfReady, checkLastLoseEnd, nextTurn } from "./rules";
 import { addSystemMessage, addPlayerMessage, assertNotMuted } from "./chatService";
 import { forbidden, invalidState, badRequest } from "./errors";
-import { LIMITS } from "./limits";
+import { LIMITS } from "@/lib/game/limits";
 import * as v from "./validate";
 
 type ServiceResult = { room: RoomState; messages: ServerToClientMessage[] };

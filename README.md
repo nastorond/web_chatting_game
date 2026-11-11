@@ -42,9 +42,11 @@ npm run dev
 
 ## 🧱 백엔드 운영 메모
 
-- 같은 방에 대한 요청은 백엔드 프로세스 메모리의 방 단위 잠금(`backend/src/game/lock.ts`)으로 순서대로 처리합니다. **백엔드 인스턴스는 1개로 운영**해야 하며, 여러 개로 늘리려면 Redis 기반 분산 잠금으로 바꿔야 합니다.
+- 게임 API는 Next.js 라우트(`app/api/room/[roomId]/{join,state,action}`)로 Vercel에서 함께 배포되고, 상태는 Upstash Redis(`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`)에 저장됩니다. 게임 로직은 `lib/server/game/`에 있습니다.
+- 같은 방에 대한 상태 변경은 Redis 잠금(`lib/server/game/lock.ts`)으로 순서대로 처리해 서버리스 인스턴스가 여러 개여도 데이터가 덮어써지지 않습니다.
 - 입장 시 서버가 플레이어별 토큰을 발급하고, 이후 요청은 `X-Player-Token` 헤더로 인증합니다.
 - 응답이 없는 플레이어는 대기/단어 제출/종료 상태에서 60초 뒤 자동 퇴장되고, 게임 진행 중에는 30초 뒤 차례만 자동으로 넘어갑니다.
+- 로컬 개발 시에는 `.env.local`에 Upstash 환경 변수가 필요합니다. (`vercel env pull .env.local`)
 
 ## 📄 라이선스
 

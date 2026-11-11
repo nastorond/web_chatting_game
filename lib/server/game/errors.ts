@@ -6,7 +6,7 @@
  * 그 외의 에러는 500 + 일반 메시지로 숨깁니다.
  */
 
-import { ApiErrorCode } from "./types";
+import { ApiErrorCode } from "@/lib/game/types";
 
 export class GameError extends Error {
   constructor(

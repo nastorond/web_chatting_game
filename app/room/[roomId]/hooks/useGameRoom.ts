@@ -21,7 +21,8 @@ import {
   ApiErrorCode,
 } from "@/lib/game/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+// API 는 같은 Vercel 프로젝트의 /api 라우트에서 제공됩니다.
+const API_BASE = "";
 const POLL_INTERVAL_MS = 1000;
 
 type VisibleWord = { playerId: string; word: string | null };

@@ -5,11 +5,11 @@
  * 채팅은 Redis 리스트에 RPUSH 로 원자적으로 추가되므로 동시에 보내도 유실되지 않습니다.
  */
 
-import { ChatMessage, RoomState, ServerToClientMessage } from "./types";
+import { ChatMessage, RoomState, ServerToClientMessage } from "@/lib/game/types";
 import { appendChat } from "./store";
 import { getRoom, getPlayer, generateId } from "./utils";
 import { GameError } from "./errors";
-import { LIMITS } from "./limits";
+import { LIMITS } from "@/lib/game/limits";
 import * as v from "./validate";
 
 export async function addSystemMessage(roomId: string, text: string): Promise<void> {

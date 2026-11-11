@@ -6,8 +6,8 @@
  * "심판은 항상 1명", "차례는 참여 가능한 플레이어에게" 같은 규칙을 다시 맞춥니다.
  */
 
-import { RoomState, Player } from "./types";
-import { LIMITS } from "./limits";
+import { RoomState, Player } from "@/lib/game/types";
+import { LIMITS } from "@/lib/game/limits";
 
 /** 게임 진행 정보를 모두 지우고 대기 상태로 되돌립니다. (플레이어 목록은 유지) */
 export function resetToWaiting(room: RoomState): RoomState {
